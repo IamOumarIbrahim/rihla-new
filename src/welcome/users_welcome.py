@@ -57,18 +57,32 @@ class BaseWelcomeScreen:
         self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # Bind mouse wheel events for smooth scrolling (removed again by ui.clear_window)
-        self.canvas.bind_all("<MouseWheel>", self._on_mouse_wheel)  # Windows & Mac
-        self.canvas.bind_all("<Button-4>", self._on_mouse_wheel)    # Linux scroll up
-        self.canvas.bind_all("<Button-5>", self._on_mouse_wheel)    # Linux scroll down
+        # Bind mouse wheel events safely
+        self.canvas.bind_all("<MouseWheel>", self._on_mouse_wheel)
+        self.canvas.bind_all("<Button-4>", self._on_mouse_wheel)
+        self.canvas.bind_all("<Button-5>", self._on_mouse_wheel)
+
+        # Unbind when canvas is destroyed to prevent background errors
+        self.canvas.bind("<Destroy>", self._on_destroy)
 
         tk.Label(self.scrollable_frame, text=f"Welcome back, {self.username}!",
                  font=("Arial", 22, "bold"), bg="#ecf0f1", fg="#2c3e50").pack(anchor="w", padx=30, pady=(20, 5))
 
     def _on_mouse_wheel(self, event):
-        if event.delta:
-            self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-        elif event.num == 4:
-            self.canvas.yview_scroll(-1, "units")
-        elif event.num == 5:
-            self.canvas.yview_scroll(1, "units")
+        try:
+            if event.delta:
+                self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+            elif event.num == 4:
+                self.canvas.yview_scroll(-1, "units")
+            elif event.num == 5:
+                self.canvas.yview_scroll(1, "units")
+        except Exception:
+            pass
+
+    def _on_destroy(self, event):
+        try:
+            self.canvas.unbind_all("<MouseWheel>")
+            self.canvas.unbind_all("<Button-4>")
+            self.canvas.unbind_all("<Button-5>")
+        except Exception:
+            pass
