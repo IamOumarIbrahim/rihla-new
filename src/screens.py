@@ -4,14 +4,15 @@ from database import register_user, check_login
 from forgot_password import show_forgot_password_screen
 
 def clear_window(root):
+    for job in root.tk.splitlist(root.tk.call('after', 'info')):
+        root.after_cancel(job)
     for widget in root.winfo_children():
         widget.destroy()
 
+from customer_welcome import show_customer_welcome
+
 def show_welcome_screen(root, email):
-    clear_window(root)
-    username = email.split('@')[0]
-    tk.Label(root, text=f"Hi, {username}!", font=("Arial", 24, "bold")).pack(pady=100)
-    tk.Button(root, text="Log Out", relief="raised", command=lambda: show_login_screen(root)).pack(pady=20)
+    show_customer_welcome(root, email, clear_window, show_login_screen)
 
 def open_social_login(root, provider):
     social_window = tk.Toplevel(root)
