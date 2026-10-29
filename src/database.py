@@ -28,7 +28,6 @@ def init_db():
             )
         ''')
 
-        # Migrate an existing users.db that has no role column yet
         columns = [row[1] for row in conn.execute("PRAGMA table_info(users)")]
         if "role" not in columns:
             conn.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'Customer'")
@@ -75,3 +74,8 @@ def get_password_by_email(email):
     with _connect() as conn:
         row = conn.execute("SELECT password FROM users WHERE email = ?", (email,)).fetchone()
     return row[0] if row else None
+
+
+def update_password(email, new_password):
+    with _connect() as conn:
+        conn.execute("UPDATE users SET password = ? WHERE email = ?", (new_password, email))
