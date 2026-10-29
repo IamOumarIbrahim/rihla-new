@@ -1,16 +1,24 @@
 import tkinter as tk
+
 from database import init_db
-from screens import show_login_screen
+import navigate
 
-# Initialize SQLite database
-init_db()
 
-# Main window
-root = tk.Tk()
-root.title("Rihla")
-root.geometry("1920x1080")
+def main():
+    init_db()
 
-# Start with the login screen
-show_login_screen(root)
+    root = tk.Tk()
+    root.title("Rihla")
 
-root.mainloop()
+    # Always launch maximized
+    try:
+        root.state("zoomed")              # Windows / macOS
+    except tk.TclError:
+        root.attributes("-zoomed", True)  # Linux
+
+    navigate.show_login(root)
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    main()

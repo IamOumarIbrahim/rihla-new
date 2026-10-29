@@ -1,19 +1,21 @@
 import tkinter as tk
 
+from ui import clear_window
+import navigate
+
+
 class BaseWelcomeScreen:
-    def __init__(self, root, email, role_name, clear_window_func, login_screen_func):
+    def __init__(self, root, email, role_name):
         self.root = root
         self.email = email
         self.role_name = role_name
         self.username = email.split('@')[0]
-        self.clear_window = clear_window_func
-        self.login_screen_func = login_screen_func
-        
-        self.clear_window(self.root)
-        
+
+        clear_window(self.root)
+
         self.main_container = tk.Frame(self.root)
         self.main_container.pack(fill=tk.BOTH, expand=True)
-        
+
         self.setup_nav_bar()
         self.setup_scrollable_right_area()
 
@@ -29,7 +31,7 @@ class BaseWelcomeScreen:
         self.add_nav_button("Settings")
 
         tk.Button(self.nav_bar, text="Log Out", width=15, relief="raised", bg="#e74c3c", fg="white",
-                  command=lambda: self.login_screen_func(self.root)).pack(side=tk.BOTTOM, pady=20)
+                  command=lambda: navigate.show_login(self.root)).pack(side=tk.BOTTOM, pady=20)
 
     def add_nav_button(self, text, command=None):
         btn = tk.Button(self.nav_bar, text=text, width=15, relief="flat", bg="#34495e", fg="white", command=command)
@@ -42,7 +44,7 @@ class BaseWelcomeScreen:
 
         self.canvas = tk.Canvas(right_container, bg="#ecf0f1", highlightthickness=0)
         scrollbar = tk.Scrollbar(right_container, orient="vertical", command=self.canvas.yview)
-        
+
         self.scrollable_frame = tk.Frame(self.canvas, bg="#ecf0f1")
         self.scrollable_frame.bind(
             "<Configure>",
@@ -55,12 +57,12 @@ class BaseWelcomeScreen:
         self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # Bind mouse wheel events for smooth scrolling
-        self.canvas.bind_all("<MouseWheel>", self._on_mouse_wheel) # Windows & Mac
-        self.canvas.bind_all("<Button-4>", self._on_mouse_wheel)   # Linux scroll up
-        self.canvas.bind_all("<Button-5>", self._on_mouse_wheel)   # Linux scroll down
+        # Bind mouse wheel events for smooth scrolling (removed again by ui.clear_window)
+        self.canvas.bind_all("<MouseWheel>", self._on_mouse_wheel)  # Windows & Mac
+        self.canvas.bind_all("<Button-4>", self._on_mouse_wheel)    # Linux scroll up
+        self.canvas.bind_all("<Button-5>", self._on_mouse_wheel)    # Linux scroll down
 
-        tk.Label(self.scrollable_frame, text=f"Welcome back, {self.username}!", 
+        tk.Label(self.scrollable_frame, text=f"Welcome back, {self.username}!",
                  font=("Arial", 22, "bold"), bg="#ecf0f1", fg="#2c3e50").pack(anchor="w", padx=30, pady=(20, 5))
 
     def _on_mouse_wheel(self, event):

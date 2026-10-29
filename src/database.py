@@ -1,55 +1,77 @@
+import os
 import sqlite3
+from contextlib import contextmanager
+
+from config import ROLES, DEMO_ACCOUNTS
+
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "users.db")
+
+
+@contextmanager
+def _connect():
+    """Open the database, commit on success, always close."""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        yield conn
+        conn.commit()
+    finally:
+        conn.close()
+
 
 def init_db():
-    conn = sqlite3.connect("users.db")
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            email TEXT UNIQUE,
-            password TEXT
-        )
-    ''')
-    
-    default_accounts = [
-        ("customer@email.com", "customer1234"),
-        ("vendor@email.com", "vendor1234"),
-        ("staff@email.com", "staff1234"),
-        ("partner@email.com", "partner1234"),
-        ("dispatcher@email.com", "dispatcher1234")
-    ]
-    
-    for email, password in default_accounts:
-        try:
-            cursor.execute("INSERT INTO users (email, password) VALUES (?, ?)", (email, password))
-        except sqlite3.IntegrityError:
-            pass
-            
-    conn.commit()
-    conn.close()
+    with _connect() as conn:
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                email TEXT UNIQUE,
+                password TEXT,
+                role TEXT NOT NULL DEFAULT 'Customer'
+            )
+        ''')
 
-def register_user(email, password):
+        # Migrate an existing users.db that has no role column yet
+        columns = [row[1] for row in conn.execute("PRAGMA table_info(users)")]
+        if "role" not in columns:
+            conn.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'Customer'")
+
+        for role, (email, password) in DEMO_ACCOUNTS.items():
+            try:
+                conn.execute(
+                    "INSERT INTO users (email, password, role) VALUES (?, ?, ?)",
+                    (email, password, role),
+                )
+            except sqlite3.IntegrityError:
+                conn.execute("UPDATE users SET role = ? WHERE email = ?", (role, email))
+
+
+def register_user(email, password, role="Customer"):
+    if role not in ROLES:
+        role = "Customer"
     try:
-        conn = sqlite3.connect("users.db")
-        cursor = conn.cursor()
-        cursor.execute("INSERT INTO users (email, password) VALUES (?, ?)", (email, password))
-        conn.commit()
-        conn.close()
+        with _connect() as conn:
+            conn.execute(
+                "INSERT INTO users (email, password, role) VALUES (?, ?, ?)",
+                (email, password, role),
+            )
         return True
     except sqlite3.IntegrityError:
         return False
 
+
 def check_login(email, password):
-    conn = sqlite3.connect("users.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users WHERE email = ? AND password = ?", (email, password))
-    user = cursor.fetchone()
-    conn.close()
-    return user is not None
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM users WHERE email = ? AND password = ?", (email, password)
+        ).fetchone()
+    return row is not None
+
+
+def get_role(email):
+    with _connect() as conn:
+        row = conn.execute("SELECT role FROM users WHERE email = ?", (email,)).fetchone()
+    return row[0] if row and row[0] else "Customer"
+
 
 def get_password_by_email(email):
-    conn = sqlite3.connect("users.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT password FROM users WHERE email = ?", (email,))
-    row = cursor.fetchone()
-    conn.close()
+    with _connect() as conn:
+        row = conn.execute("SELECT password FROM users WHERE email = ?", (email,)).fetchone()
     return row[0] if row else None

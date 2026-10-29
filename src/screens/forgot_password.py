@@ -1,6 +1,10 @@
 import tkinter as tk
 from tkinter import messagebox
+
 from database import get_password_by_email
+from ui import clear_window
+import navigate
+
 
 def edit_distance(s1, s2):
     if len(s1) > len(s2):
@@ -16,8 +20,9 @@ def edit_distance(s1, s2):
         distances = distances_
     return distances[-1]
 
-def show_forgot_password_screen(root, clear_window_func, show_login_func):
-    clear_window_func(root)
+
+def show_forgot_password_screen(root):
+    clear_window(root)
 
     tk.Label(root, text="Forgot Password", font=("Arial", 14, "bold")).pack(pady=20)
 
@@ -52,7 +57,7 @@ def show_forgot_password_screen(root, clear_window_func, show_login_func):
             status_label.config(text="Close guess! Recovering password...", fg="green")
 
             def delayed_action():
-                show_login_func(root, prefilled_email=email, prefilled_password=stored_password)
+                navigate.show_login(root, prefilled_email=email, prefilled_password=stored_password)
 
             root.after(3000, delayed_action)
         else:
@@ -60,4 +65,5 @@ def show_forgot_password_screen(root, clear_window_func, show_login_func):
             messagebox.showerror("Error", "Password guess is too far off.")
 
     tk.Button(root, text="Submit Guess", relief="raised", command=verify_guess).pack(pady=20)
-    tk.Button(root, text="Back to Login", relief="raised", command=lambda: show_login_func(root)).pack(pady=5)
+    tk.Button(root, text="Back to Login", relief="raised",
+              command=lambda: navigate.show_login(root)).pack(pady=5)
