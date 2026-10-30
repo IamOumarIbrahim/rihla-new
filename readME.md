@@ -25,3 +25,24 @@ The login screen has quick buttons for these accounts. They are created automati
 | Dispatcher | dispatcher@email.com  | dispatcher1234 |
 
 Test ticket code for the staff scanner: `1234567890123456` (event: New year dinner).
+
+## What each role can do
+
+- **Customer**: browse events, pick a date and number of guests, book and get a 16-digit ticket code.
+  *My Bookings* shows every ticket (Confirmed, Checked in, Expired, Cancelled) and lets you cancel an unused one.
+  *Support* sends a message to staff.
+- **Vendor**: create events, venues and categories. *Bookings* shows who booked and the guests and money booked.
+  Deleting an event cancels its unused bookings and tickets.
+- **Staff**: *Ticket Scanner* admits a ticket once and says how many guests to let in. *Support Tickets* lists open
+  messages from customers. *Schedule* lists today's events with expected guests.
+- **Dispatcher**: register and assign vehicles. The dispatch screen shows the guests booked for the chosen event.
+- **Every role**: *Dashboard* returns to the home screen, *Settings* changes the password.
+- **Partner**: the screens are still placeholders.
+
+## Tests
+
+```
+python -m unittest discover -s tests
+```
+
+The tests use a temporary database, so `src/users.db` is never touched.

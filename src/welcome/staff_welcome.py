@@ -2,7 +2,11 @@ import tkinter as tk
 from tkinter import messagebox
 from .users_welcome import BaseWelcomeScreen
 import theme as t
-from database import get_all_venues, get_events_by_venue, verify_ticket_code
+from datetime import date
+from database import (
+    get_all_venues, get_events_by_venue, verify_ticket_code,
+    get_open_support_tickets, resolve_support_ticket, get_events_today
+)
 
 
 class StaffWelcomeScreen(BaseWelcomeScreen):
@@ -123,7 +127,7 @@ class StaffWelcomeScreen(BaseWelcomeScreen):
         for widget in self.scrollable_frame.winfo_children():
             widget.destroy()
         tk.Label(self.scrollable_frame, text="Support Tickets", font=(t.FONT, 22, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 10))
-        tk.Label(self.scrollable_frame, text="No open support tickets at the moment.", font=(t.FONT, 11), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30)
+        self.render_support_list()
 
 
 
@@ -131,7 +135,40 @@ class StaffWelcomeScreen(BaseWelcomeScreen):
         for widget in self.scrollable_frame.winfo_children():
             widget.destroy()
         tk.Label(self.scrollable_frame, text="Staff Schedule", font=(t.FONT, 22, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 10))
-        tk.Label(self.scrollable_frame, text="Your assigned shift: Today, 14:00 - 22:00 (Gate 3)", font=(t.FONT, 11), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30)
+        self.render_today_schedule()
+
+
+    def render_support_list(self):
+        tickets = get_open_support_tickets()
+        if not tickets:
+            tk.Label(self.scrollable_frame, text="No open support tickets at the moment.", font=(t.FONT, 11), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30)
+            return
+        for ticket in tickets:
+            card = tk.Frame(self.scrollable_frame, bg=t.CARD_BG, bd=1, relief="solid", highlightbackground=t.BORDER)
+            card.pack(fill=tk.X, padx=30, pady=8, ipady=8)
+            tk.Label(card, text=ticket["subject"], font=(t.FONT, 13, "bold"), bg=t.CARD_BG, fg=t.TEXT, wraplength=650, justify="left").pack(anchor="w", padx=15, pady=(8, 2))
+            tk.Label(card, text=f"From {ticket['customer_email']}  |  {ticket['created_at']}", font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=15)
+            tk.Label(card, text=ticket["message"], font=(t.FONT, 10), bg=t.CARD_BG, fg=t.TEXT, wraplength=650, justify="left").pack(anchor="w", padx=15, pady=4)
+            resolve_btn = tk.Button(card, text="Mark resolved", font=(t.FONT, 9, "bold"), bg=t.PRIMARY, fg="white", relief="flat",
+                                    command=lambda tid=ticket["id"]: self.handle_resolve_ticket(tid))
+            resolve_btn.pack(anchor="w", padx=15, pady=(4, 8), ipadx=10, ipady=4)
+
+    def handle_resolve_ticket(self, ticket_id):
+        resolve_support_ticket(ticket_id, self.email)
+        self.build_support_content()
+
+    def render_today_schedule(self):
+        tk.Label(self.scrollable_frame, text=date.today().strftime("%A, %d %B %Y"), font=(t.FONT, 11), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=(0, 10))
+        events = get_events_today()
+        if not events:
+            tk.Label(self.scrollable_frame, text="No events are running today.", font=(t.FONT, 11, "italic"), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30)
+            return
+        for ev in events:
+            card = tk.Frame(self.scrollable_frame, bg=t.CARD_BG, bd=1, relief="solid", highlightbackground=t.BORDER)
+            card.pack(fill=tk.X, padx=30, pady=8, ipady=8)
+            tk.Label(card, text=ev["title"], font=(t.FONT, 13, "bold"), bg=t.CARD_BG, fg=t.TEXT, wraplength=650, justify="left").pack(anchor="w", padx=15, pady=(8, 2))
+            tk.Label(card, text=f"{ev['time'] or 'TBA'}  |  {ev['venue_name'] or 'Venue to be announced'}", font=(t.FONT, 10), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=15)
+            tk.Label(card, text=f"Bookings: {ev['bookings']}    Expected guests: {ev['guests']}    Checked in: {ev['checked_in']}", font=(t.FONT, 10, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(anchor="w", padx=15, pady=(4, 8))
 
 
 def show_staff_welcome(root, email):

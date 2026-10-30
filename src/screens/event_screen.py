@@ -5,6 +5,7 @@ from tkinter import messagebox
 import navigate
 import theme as t
 from ui import clear_window
+from database import create_booking, format_ticket_code, price_to_int, MAX_GUESTS_PER_BOOKING
 
 def show_event_screen(root, email, tour):
     clear_window(root)
@@ -89,6 +90,30 @@ def show_event_screen(root, email, tour):
     selected_label = tk.Label(right_sidebar, text="Selected: None", font=(t.FONT, 9, "bold"), bg=t.FIELD_BG, fg="#e74c3c")
     selected_label.pack(anchor="w", pady=(10, 5))
 
+    # ----- guests and total price -----
+    unit_price = price_to_int(tour["price"])
+    guests_row = tk.Frame(right_sidebar, bg=t.FIELD_BG)
+    guests_row.pack(fill=tk.X, pady=(5, 0))
+    tk.Label(guests_row, text="Guests:", font=(t.FONT, 10, "bold"), bg=t.FIELD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT)
+    guests_var = tk.IntVar(value=1)
+    tk.Spinbox(guests_row, from_=1, to=MAX_GUESTS_PER_BOOKING, width=4, textvariable=guests_var, state="readonly",
+               readonlybackground=t.CARD_BG, font=(t.FONT, 10)).pack(side=tk.LEFT, padx=8)
+
+    total_label = tk.Label(right_sidebar, text="", font=(t.FONT, 12, "bold"), bg=t.FIELD_BG, fg=t.TEXT)
+    total_label.pack(anchor="w", pady=(8, 0))
+
+    def current_guests():
+        try:
+            return max(1, int(guests_var.get()))
+        except (tk.TclError, ValueError):
+            return 1
+
+    def update_total(*args):
+        total_label.config(text=f"Total: {unit_price * current_guests()} AED")
+
+    guests_var.trace_add("write", update_total)
+    update_total()
+
     def draw_calendar():
         for widget in days_grid.winfo_children():
             widget.destroy()
@@ -156,7 +181,28 @@ def show_event_screen(root, email, tour):
         if not cal_state["selected"]:
             messagebox.showerror("Error", "Please select an available date for your tour.")
             return
-        messagebox.showinfo("Success", f"Proceeding to secure booking for {tour['title']} on {cal_state['selected'].strftime('%b %d, %Y')}!")
+        chosen_date = cal_state["selected"]
+        guests = current_guests()
+        if not messagebox.askyesno(
+            "Confirm booking",
+            f"Book {tour['title']} on {chosen_date.strftime('%b %d, %Y')} for {guests} guest(s)?\n\nTotal: {unit_price * guests} AED",
+        ):
+            return
+
+        result = create_booking(email, tour["id"], chosen_date.isoformat(), guests)
+        if not result["success"]:
+            messagebox.showerror("Booking failed", result["message"])
+            return
+
+        booking = result["booking"]
+        messagebox.showinfo(
+            "Booking confirmed",
+            f"Your booking is confirmed.\n\nTicket code: {format_ticket_code(booking['ticket_code'])}\n"
+            f"Show this code at the entrance. You can find it again in My Bookings.",
+        )
+        # Imported here to avoid a circular import (customer_welcome imports this module).
+        from welcome.customer_welcome import show_customer_welcome
+        show_customer_welcome(root, email, "bookings")
 
     book_btn = tk.Button(right_sidebar, text="Proceed to Booking", font=(t.FONT, 11, "bold"), bd=0, relief="flat",
                          bg=t.ACCENT, fg="white", activebackground=t.PRIMARY_HOVER, cursor="hand2", command=handle_booking)

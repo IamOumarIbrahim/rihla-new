@@ -5,7 +5,8 @@ from .users_welcome import BaseWelcomeScreen
 from database import (
     get_events_by_vendor, create_event, update_event, delete_event,
     get_vendor_categories, add_vendor_category, delete_vendor_category,
-    get_venues_by_vendor, create_venue, delete_venue
+    get_venues_by_vendor, create_venue, delete_venue, count_active_bookings,
+    get_bookings_by_vendor
 )
 import theme as t
 
@@ -16,6 +17,7 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
         self.root = root
 
         self.add_nav_button("My Events", self.build_vendor_content)
+        self.add_nav_button("Bookings", self.build_bookings_content)
         self.add_nav_button("Manage Venues", self.build_venues_content)
         self.add_nav_button("Manage Categories", self.build_categories_content)
         self.add_nav_button("Add New Event", self.open_add_event_modal)
@@ -67,6 +69,33 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
             delete_btn = tk.Button(btn_row, text="Delete", bg="#e74c3c", fg="white", font=(t.FONT, 9, "bold"), relief="flat", command=lambda eid=event['id']: self.handle_delete(eid))
             delete_btn.pack(side=tk.LEFT, ipadx=10, ipady=4)
             t.add_hover(delete_btn, "#e74c3c", "#c0392b")
+
+    def build_bookings_content(self):
+        for widget in self.scrollable_frame.winfo_children():
+            widget.destroy()
+
+        tk.Label(self.scrollable_frame, text="Bookings", font=(t.FONT, 22, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 5))
+
+        bookings = get_bookings_by_vendor(self.email)
+        live = [b for b in bookings if b["status"] != "Cancelled"]
+        summary = f"{len(live)} booking(s)  |  {sum(b['guests'] for b in live)} guests  |  {sum(b['total_price'] for b in live)} AED booked"
+        tk.Label(self.scrollable_frame, text=summary, font=(t.FONT, 11), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=(0, 10))
+
+        if not bookings:
+            tk.Label(self.scrollable_frame, text="No customer has booked one of your events yet.", font=(t.FONT, 11, "italic"), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=10)
+            return
+
+        status_colors = {"Confirmed": "#27ae60", "Checked in": t.PRIMARY, "Expired": t.TEXT_MUTED, "Cancelled": "#e74c3c"}
+        for b in bookings:
+            card = tk.Frame(self.scrollable_frame, bg=t.CARD_BG, bd=1, relief="solid", highlightbackground=t.BORDER)
+            card.pack(fill=tk.X, padx=30, pady=8, ipady=8)
+            top_row = tk.Frame(card, bg=t.CARD_BG)
+            top_row.pack(fill=tk.X, padx=15, pady=(5, 0))
+            tk.Label(top_row, text=b["status"].upper(), font=(t.FONT, 9, "bold"), bg=t.CARD_BG, fg=status_colors.get(b["status"], t.TEXT_MUTED)).pack(side=tk.LEFT)
+            tk.Label(top_row, text=f"{b['total_price']} AED", font=(t.FONT, 11, "bold"), bg=t.CARD_BG, fg=t.ACCENT).pack(side=tk.RIGHT)
+            tk.Label(card, text=b["event_title"], font=(t.FONT, 13, "bold"), bg=t.CARD_BG, fg=t.TEXT, wraplength=650, justify="left").pack(anchor="w", padx=15, pady=2)
+            info = f"{b['booking_date']} at {b['event_time'] or 'TBA'}  |  {b['guests']} guest(s)  |  {b['customer_email']}"
+            tk.Label(card, text=info, font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=15, pady=2)
 
     def build_venues_content(self):
         for widget in self.scrollable_frame.winfo_children():
@@ -395,7 +424,9 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
         t.add_hover(save_btn, t.PRIMARY, t.PRIMARY_HOVER)
 
     def handle_delete(self, event_id):
-        if messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this event listing?"):
+        active = count_active_bookings(event_id)
+        warning = f"\n\n{active} active booking(s) will be cancelled and their tickets will stop working." if active else ""
+        if messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this event listing?" + warning):
             delete_event(event_id)
             messagebox.showinfo("Deleted", "Event listing deleted successfully.")
             self.build_vendor_content()
