@@ -39,8 +39,10 @@ Test ticket code for the staff scanner: `1234567890123456` (event: New year dinn
 - **Dispatcher**: register and assign vehicles. The dispatch screen shows the guests booked and the capacity of the chosen event.
 - **Event capacity**: an event with vehicles can take as many guests as the seats of its vehicles (any mix of types).
   An event with no vehicles uses the capacity the vendor typed in. Seats are counted per date, and cancelled bookings free their seats.
+  Capacity is visualized as a bar filled with blue when full and white when empty, with simple text next to it: `N remaining` (and `Hurry up!` when N <= 5).
 - **Every role**: *Dashboard* returns to the home screen, *Settings* changes the password.
-- **Partner**: the screens are still placeholders.
+- **Partner (OTA)**: Online Travel Agency partner portal. Can book extended group capacity across multiple events for various client groups, add events to a shopping list, and make a singular payment for all events combined.
+- **Demo Payment**: Simulated payment checkout for customers and partners supporting Visa, Mastercard, and Bank Transfer with hardcoded demo credentials. Manual alterations from the authorized demo records cause the payment to fail.
 
 ## Tests
 

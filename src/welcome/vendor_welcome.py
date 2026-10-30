@@ -56,13 +56,13 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
             tk.Label(card, text=event['title'], font=(t.FONT, 14, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(anchor="w", padx=15, pady=2)
             venue_display = event.get('venue_name') or 'Unknown Venue'
             recur_suffix = f" ({event['recur_day']})" if event['is_recurring'] == "Recurring" and event['recur_day'] not in (None, "", "None", "N/A") else ""
-            tk.Label(card, text=f"📍 {venue_display} | ⏰ {event['event_datetime']} | 🔁 {event['is_recurring']}{recur_suffix}", font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=15, pady=2)
+            tk.Label(card, text=f"{venue_display}  |  {event['event_datetime']}  |  {event['is_recurring']}{recur_suffix}", font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=15, pady=2)
             cap = get_event_capacity(event['id'])
             if cap['vehicles']:
                 vehicle_count = sum(v['count'] for v in cap['vehicles'])
-                capacity_text = f"👥 Capacity: {cap['total']} guests (seats of {vehicle_count} assigned vehicle(s))"
+                capacity_text = f"Capacity: {cap['total']} guests (seats of {vehicle_count} assigned vehicle(s))"
             else:
-                capacity_text = f"👥 Capacity: {cap['total']} guests (no vehicles assigned)"
+                capacity_text = f"Capacity: {cap['total']} guests (no vehicles assigned)"
             tk.Label(card, text=capacity_text, font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=15, pady=2)
             tk.Label(card, text=event['desc'], font=(t.FONT, 10), bg=t.CARD_BG, fg=t.TEXT_MUTED, wraplength=600, justify="left").pack(anchor="w", padx=15, pady=5)
 
@@ -152,7 +152,7 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
             row = tk.Frame(list_frame, bg=t.CARD_BG, bd=1, relief="solid", highlightbackground=t.BORDER)
             row.pack(fill=tk.X, pady=5, ipady=5, ipadx=10)
 
-            tk.Label(row, text=f"{v['name']} — {v['address']}", font=(t.FONT, 11, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(side=tk.LEFT, padx=10)
+            tk.Label(row, text=f"{v['name']}  -  {v['address']}", font=(t.FONT, 11, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(side=tk.LEFT, padx=10)
 
             def make_delete(vid):
                 return lambda: self.handle_delete_venue(vid)

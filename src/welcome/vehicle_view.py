@@ -100,14 +100,14 @@ class VehicleView:
         table_frame.pack(fill=tk.X, padx=30, pady=5)
 
         columns_meta = [
-            ("select", "☑"),
-            ("id", "ID ⚙️"),
-            ("license", "License Number ⚙️"),
-            ("type", "Vehicle Type ⚙️"),
-            ("capacity", "Capacity ⚙️"),
-            ("location", "Location ⚙️"),
-            ("status", "Status ⚙️"),
-            ("reassign", "Auto-Reassign ⚙️")
+            ("select", "[x]"),
+            ("id", "ID "),
+            ("license", "License Number "),
+            ("type", "Vehicle Type "),
+            ("capacity", "Capacity "),
+            ("location", "Location "),
+            ("status", "Status "),
+            ("reassign", "Auto-Reassign ")
         ]
 
         col_keys = [c[0] for c in columns_meta]
@@ -161,7 +161,7 @@ class VehicleView:
                         break
                 
                 if match:
-                    chk_symbol = "☑" if vid in self.selected_ids else "☐"
+                    chk_symbol = "[x]" if vid in self.selected_ids else "[ ]"
                     reassign_text = "Yes" if v['auto_reassign_recurring'] else "No"
                     tree.insert("", tk.END, values=(chk_symbol, vid, v['license_number'], v['vehicle_type'], v['capacity'], v['location'], v['status'], reassign_text))
 

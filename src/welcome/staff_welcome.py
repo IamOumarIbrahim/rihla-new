@@ -99,20 +99,20 @@ class StaffWelcomeScreen(BaseWelcomeScreen):
         def process_scan(event=None):
             code = code_entry.get().strip()
             if len(code) != 16 or not code.isdigit():
-                result_label.config(text="❌ Error: Ticket code must be exactly 16 digits.", fg="#e74c3c")
+                result_label.config(text="Error: Ticket code must be exactly 16 digits.", fg="#e74c3c")
                 return
 
             expected_title = event_titles.get(event_var.get())
             if not expected_title:
-                result_label.config(text="\u274c Error: Select a venue and an event first.", fg="#e74c3c")
+                result_label.config(text=f"Error: Select a venue and an event first.", fg="#e74c3c")
                 return
 
             res = verify_ticket_code(code, expected_title)
             if res["success"]:
-                result_label.config(text=f"✔ {res['message']}", fg="#27ae60")
+                result_label.config(text=f"OK: {res['message']}", fg="#27ae60")
                 code_entry.delete(0, tk.END)
             else:
-                result_label.config(text=f"❌ {res['message']}", fg="#e74c3c")
+                result_label.config(text=f"Failed: {res['message']}", fg="#e74c3c")
 
         code_entry.bind("<Return>", process_scan)
 
@@ -120,7 +120,7 @@ class StaffWelcomeScreen(BaseWelcomeScreen):
         scan_btn.pack(fill=tk.X, padx=20, pady=10, ipady=10)
         t.add_hover(scan_btn, t.PRIMARY, t.PRIMARY_HOVER)
 
-        tip_text = tk.Label(card, text="💡 Test Ticket Code: 1234567890123456", font=(t.FONT, 9, "italic"), bg=t.CARD_BG, fg=t.TEXT_MUTED)
+        tip_text = tk.Label(card, text="Test Ticket Code: 1234567890123456", font=(t.FONT, 9, "italic"), bg=t.CARD_BG, fg=t.TEXT_MUTED)
         tip_text.pack(anchor="w", padx=20, pady=(10, 0))
 
     def build_support_content(self):

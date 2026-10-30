@@ -5,8 +5,10 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "server"))
 
-import database as d
+import db_test_helpers as d
+import database_core
 
 
 def next_weekday(names):
@@ -19,7 +21,7 @@ def next_weekday(names):
 class BookingTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        d.DB_PATH = os.path.join(self.tmp.name, "test.db")
+        database_core.DB_PATH = os.path.join(self.tmp.name, "test.db")
         d.init_db()
         self.events = {e["title"]: e for e in d.get_all_events()}
         self.safari = self.events["Red Dune Sunset Safari and Royal BBQ Dinner"]
@@ -48,9 +50,14 @@ class BookingTests(unittest.TestCase):
         self.assertFalse(self.book(guests=d.MAX_GUESTS_PER_BOOKING + 1)["success"])
         self.assertFalse(d.create_booking("", self.safari["id"], self.day.isoformat(), 1)["success"])
 
-    def test_no_double_booking_same_day(self):
-        self.assertTrue(self.book()["success"])
-        self.assertFalse(self.book()["success"])
+    def test_customer_can_further_book_same_event(self):
+        # A customer can further book the same event if they wish
+        res1 = self.book(guests=2)
+        self.assertTrue(res1["success"])
+        res2 = self.book(guests=3)
+        self.assertTrue(res2["success"])
+        bookings = d.get_bookings_by_customer("a@email.com")
+        self.assertEqual(len(bookings), 2)
 
     def test_scanner_accepts_once_and_reports_guests(self):
         code = self.book(guests=4)["booking"]["ticket_code"]
@@ -116,7 +123,7 @@ class BookingTests(unittest.TestCase):
 class CapacityTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        d.DB_PATH = os.path.join(self.tmp.name, "test.db")
+        database_core.DB_PATH = os.path.join(self.tmp.name, "test.db")
         d.init_db()
         self.day = datetime.date.today() + datetime.timedelta(days=3)
         d.create_event("Small dinner", "General", "100 AED", "a long enough description", "vendor@email.com", 1,

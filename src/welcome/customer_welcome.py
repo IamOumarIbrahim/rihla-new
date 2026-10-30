@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 import tkinter as tk
 from tkinter import messagebox
 from .users_welcome import BaseWelcomeScreen
@@ -7,12 +7,33 @@ from database import (
     get_all_events, get_bookings_by_customer, cancel_booking, format_ticket_code,
     create_support_ticket, get_support_tickets_by_customer, get_event_capacity
 )
+from capacity_bar import CapacityBar
 import theme as t
+import icons as ic
 
 
 def _parse_price(value):
     digits = "".join(c for c in str(value) if c in "0123456789")
     return int(digits) if digits else 0
+
+
+def _next_date_for_tour(tour):
+    today = date.today()
+    if tour.get("is_recurring") == "Recurring":
+        weekday_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        allowed = {d.strip() for d in (tour.get("recur_day") or "").split(",") if d.strip() in weekday_names}
+        if allowed:
+            cur = today
+            for _ in range(14):
+                if weekday_names[cur.weekday()] in allowed:
+                    return cur
+                cur += timedelta(days=1)
+    else:
+        try:
+            return date.fromisoformat((tour.get("event_datetime") or "")[:10])
+        except ValueError:
+            pass
+    return today
 
 
 class CustomerWelcomeScreen(BaseWelcomeScreen):
@@ -41,7 +62,7 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
                 "venue_id": e["venue_id"],
                 "venue_name": e.get("venue_name") or "Unknown Venue",
                 "level": e["is_recurring"],
-                "rating": "5.0 ★★★★★",
+                "rating": "5.0",
                 "desc": e["desc"]
             })
 
@@ -66,26 +87,35 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
 
         search_frame = tk.Frame(self.scrollable_frame, bg=t.PAGE_BG)
         search_frame.pack(fill=tk.X, padx=30, pady=10)
-        
-        tk.Label(search_frame, text="🔍", font=(t.FONT, 12), bg=t.PAGE_BG).pack(side=tk.LEFT, padx=(0, 5))
-        
+
+        search_icon_lbl = tk.Label(search_frame, bg=t.PAGE_BG)
+        search_img = ic.get_icon("search", size=16, color=t.TEXT_MUTED, master=search_frame)
+        if search_img:
+            search_icon_lbl.config(image=search_img)
+            search_icon_lbl.image = search_img
+        search_icon_lbl.pack(side=tk.LEFT, padx=(0, 5))
+
         self.search_entry = tk.Entry(search_frame, font=(t.FONT, 11))
         self.search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5, ipady=5)
         self.search_entry.insert(0, self.search_query or "Search safaris, yacht charters...")
         self.search_entry.bind("<FocusIn>", lambda e: self.search_entry.delete(0, tk.END) if self.search_entry.get() == "Search safaris, yacht charters..." else None)
-        
+
         search_btn = tk.Button(search_frame, text="Search", bg=t.ACCENT, fg="white", font=(t.FONT, 10, "bold"), relief="flat", command=self.filter_tours)
         search_btn.pack(side=tk.LEFT, padx=5, ipadx=10, ipady=3)
         t.add_hover(search_btn, t.ACCENT, "#e67e22")
 
-        filter_btn = tk.Button(search_frame, text="⚙️ Filter", bg=t.DARK_SOFT, fg="white", font=(t.FONT, 10, "bold"), relief="flat", command=self.open_filter_modal)
+        filter_btn = tk.Button(search_frame, text=" Filter", bg=t.DARK_SOFT, fg="white", font=(t.FONT, 10, "bold"), relief="flat", command=self.open_filter_modal)
+        filter_img = ic.get_icon("filter", size=14, color="#ffffff", master=search_frame)
+        if filter_img:
+            filter_btn.config(image=filter_img, compound=tk.LEFT)
+            filter_btn.image = filter_img
         filter_btn.pack(side=tk.LEFT, padx=5, ipadx=10, ipady=3)
         t.add_hover(filter_btn, t.DARK_SOFT, t.DARK)
 
         cat_frame = tk.Frame(self.scrollable_frame, bg=t.PAGE_BG)
         cat_frame.pack(fill=tk.X, padx=30, pady=10)
-        
-        unique_categories = sorted(list(set(t["category"] for t in self.all_tours)))
+
+        unique_categories = sorted(list(set(tour["category"] for tour in self.all_tours)))
         categories = ["All Experiences"] + unique_categories
 
         for cat in categories:
@@ -115,23 +145,61 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
 
             top_row = tk.Frame(card, bg=t.CARD_BG)
             top_row.pack(fill=tk.X, padx=15, pady=10)
-            tk.Label(top_row, text=tour["rating"], font=(t.FONT, 10, "bold"), bg=t.CARD_BG, fg=t.ACCENT).pack(side=tk.LEFT)
+
+            # Star icon for rating
+            star_lbl = tk.Label(top_row, text=f" {tour['rating']}", font=(t.FONT, 10, "bold"), bg=t.CARD_BG, fg=t.ACCENT)
+            star_img = ic.get_icon("star", size=14, color=t.ACCENT, master=card)
+            if star_img:
+                star_lbl.config(image=star_img, compound=tk.LEFT)
+                star_lbl.image = star_img
+            star_lbl.pack(side=tk.LEFT)
+
             price_display = tour['price'] if isinstance(tour['price'], str) else f"{tour['price']} AED"
             tk.Label(top_row, text=f"From {price_display}", font=(t.FONT, 11, "bold"), bg=t.CARD_BG, fg=t.ACCENT).pack(side=tk.RIGHT)
 
             tk.Label(card, text=tour["title"], font=(t.FONT, 13, "bold"), bg=t.CARD_BG, fg=t.TEXT, wraplength=280, justify="left").pack(anchor="w", padx=15, pady=2)
-            
-            # Dynamic date and time display from vendor input
-            schedule_info = f"📍 {tour['venue_name']} | ⏰ {tour['event_datetime']} | 🔁 {tour['is_recurring']}"
+
+            # Schedule info with icons
+            sched_frame = tk.Frame(card, bg=t.CARD_BG)
+            sched_frame.pack(anchor="w", padx=15, pady=1)
+
+            pin_img = ic.get_icon("map_pin", size=12, color=t.TEXT_MUTED, master=card)
+            if pin_img:
+                lbl = tk.Label(sched_frame, image=pin_img, bg=t.CARD_BG)
+                lbl.image = pin_img
+                lbl.pack(side=tk.LEFT)
+            tk.Label(sched_frame, text=f" {tour['venue_name']}", font=(t.FONT, 8, "italic"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT)
+
+            recur_img = ic.get_icon("repeat", size=12, color=t.TEXT_MUTED, master=card)
+            if recur_img:
+                lbl2 = tk.Label(sched_frame, image=recur_img, bg=t.CARD_BG)
+                lbl2.image = recur_img
+                lbl2.pack(side=tk.LEFT, padx=(6, 0))
+            recur_text = tour['is_recurring']
             if tour['is_recurring'] == "Recurring" and tour.get('recur_day') and tour['recur_day'] != "None":
-                schedule_info += f" ({tour['recur_day']})"
-            tk.Label(card, text=schedule_info, font=(t.FONT, 8, "italic"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=15, pady=1)
-            tk.Label(card, text=f"👥 Capacity: {get_event_capacity(tour['id'])['total']} guests per date", font=(t.FONT, 8, "italic"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=15, pady=1)
+                recur_text += f" ({tour['recur_day']})"
+            tk.Label(sched_frame, text=f" {recur_text}", font=(t.FONT, 8, "italic"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT)
+
+            # Live capacity bar
+            target_date = _next_date_for_tour(tour)
+            cap_info = get_event_capacity(tour['id'], target_date)
+            remaining_val = cap_info['remaining'] if cap_info.get('remaining') is not None else cap_info['total']
+            cap_box = tk.Frame(card, bg=t.CARD_BG)
+            cap_box.pack(anchor="w", padx=15, pady=2)
+
+            users_img = ic.get_icon("users", size=12, color=t.TEXT_MUTED, master=card)
+            if users_img:
+                ul = tk.Label(cap_box, image=users_img, bg=t.CARD_BG)
+                ul.image = users_img
+                ul.pack(side=tk.LEFT, padx=(0, 4))
+            else:
+                tk.Label(cap_box, text="Capacity:", font=(t.FONT, 8, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT, padx=(0, 4))
+            CapacityBar(cap_box, remaining=remaining_val, total=cap_info['total'], width=90, height=12, bg=t.CARD_BG).pack(side=tk.LEFT)
 
             tk.Label(card, text=tour["desc"], font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED, wraplength=280, justify="left").pack(anchor="w", padx=15, pady=6)
-            
-            details_btn = tk.Button(card, text="View Details", bg=t.PRIMARY, fg="white", font=(t.FONT, 10, "bold"), relief="flat", 
-                                    command=lambda t=tour: show_event_screen(self.root, self.email, t))
+
+            details_btn = tk.Button(card, text="View Details", bg=t.PRIMARY, fg="white", font=(t.FONT, 10, "bold"), relief="flat",
+                                    command=lambda tr=tour: show_event_screen(self.root, self.email, tr))
             details_btn.pack(anchor="w", padx=15, pady=(5, 15), ipadx=10, ipady=5)
             t.add_hover(details_btn, t.PRIMARY, t.PRIMARY_HOVER)
 
@@ -177,14 +245,22 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
             btn_row = tk.Frame(card, bg=t.CARD_BG)
             btn_row.pack(anchor="w", padx=15, pady=(5, 5))
 
-            copy_btn = tk.Button(btn_row, text="Copy code", bg=t.CHIP_BG, fg=t.TEXT, font=(t.FONT, 9, "bold"), relief="flat")
+            copy_btn = tk.Button(btn_row, text=" Copy code", bg=t.CHIP_BG, fg=t.TEXT, font=(t.FONT, 9, "bold"), relief="flat")
+            copy_img = ic.get_icon("copy", size=13, color=t.TEXT, master=btn_row)
+            if copy_img:
+                copy_btn.config(image=copy_img, compound=tk.LEFT)
+                copy_btn.image = copy_img
             copy_btn.config(command=lambda code=booking["ticket_code"], b=copy_btn: self.copy_ticket_code(code, b))
             copy_btn.pack(side=tk.LEFT, padx=(0, 10), ipadx=10, ipady=4)
             t.add_hover(copy_btn, t.CHIP_BG, t.CHIP_HOVER)
 
             if booking["can_cancel"]:
-                cancel_btn = tk.Button(btn_row, text="Cancel booking", bg="#e74c3c", fg="white", font=(t.FONT, 9, "bold"), relief="flat",
+                cancel_btn = tk.Button(btn_row, text=" Cancel", bg="#e74c3c", fg="white", font=(t.FONT, 9, "bold"), relief="flat",
                                        command=lambda b=booking: self.handle_cancel_booking(b))
+                x_img = ic.get_icon("close", size=13, color="#ffffff", master=btn_row)
+                if x_img:
+                    cancel_btn.config(image=x_img, compound=tk.LEFT)
+                    cancel_btn.image = x_img
                 cancel_btn.pack(side=tk.LEFT, ipadx=10, ipady=4)
                 t.add_hover(cancel_btn, "#e74c3c", "#c0392b")
 
@@ -260,7 +336,7 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
         content_frame.pack(fill=tk.BOTH, expand=True, padx=30, pady=5)
 
         tk.Label(content_frame, text="Maximum Price (AED)", font=(t.FONT, 10, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", pady=(5, 5))
-        
+
         price_slider = tk.Scale(content_frame, from_=50, to=self.price_ceiling, orient=tk.HORIZONTAL, bg=t.FIELD_BG, fg=t.TEXT, font=(t.FONT, 9), highlightthickness=1, highlightbackground=t.BORDER, troughcolor=t.BORDER)
         price_slider.set(self.current_filters["max_price"])
         price_slider.pack(fill=tk.X, pady=5)
@@ -289,12 +365,13 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
 
     def apply_all_filters(self):
         filtered = self.all_tours
-        
+
         cat = self.current_filters["category"]
         if cat != "All Experiences":
-            filtered = [t for t in filtered if t["category"] == cat]
+            filtered = [tour for tour in filtered if tour["category"] == cat]
 
         max_p = self.current_filters["max_price"]
+
         def parse_price(p_str):
             try:
                 digits = "".join([c for c in str(p_str) if c.isdigit()])
@@ -302,11 +379,11 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
             except ValueError:
                 return 0
 
-        filtered = [t for t in filtered if parse_price(t["price"]) <= max_p]
+        filtered = [tour for tour in filtered if parse_price(tour["price"]) <= max_p]
 
         query = self.search_query.lower()
         if query:
-            filtered = [t for t in filtered if query in t["title"].lower() or query in t["category"].lower() or query in (t["desc"] or "").lower()]
+            filtered = [tour for tour in filtered if query in tour["title"].lower() or query in tour["category"].lower() or query in (tour["desc"] or "").lower()]
 
         self.build_customer_content(filtered)
 
@@ -314,7 +391,6 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
         query = self.search_entry.get().strip()
         if query.lower() == "search safaris, yacht charters...":
             query = ""
-        # Keep the text, so search, category and price filters work together.
         self.search_query = query
         self.apply_all_filters()
 

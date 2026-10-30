@@ -116,7 +116,7 @@ def show_create_account_screen(root):
             if code_e.get() == "000000":
                 verification_status["email"] = True
                 verification_status["email_value"] = email_val.lower()
-                email_status.config(text="Email: Verified ✓", fg="#27ae60")
+                email_status.config(text="Email: Verified", fg="#27ae60")
                 win.destroy()
             else:
                 messagebox.showerror("Error", "Invalid code. Use 000000.", parent=win)
@@ -153,7 +153,7 @@ def show_create_account_screen(root):
             if code_e.get() == "000000":
                 verification_status["phone"] = True
                 verification_status["phone_value"] = p_val
-                phone_status.config(text="Phone: Verified ✓", fg="#27ae60")
+                phone_status.config(text="Phone: Verified", fg="#27ae60")
                 win.destroy()
             else:
                 messagebox.showerror("Error", "Invalid code. Use 000000.", parent=win)

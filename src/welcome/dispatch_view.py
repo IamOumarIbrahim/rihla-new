@@ -128,13 +128,13 @@ class DispatchView:
             table_frame1.pack(fill=tk.X, padx=30, pady=5)
 
             columns_meta = [
-                ("select", "☑"),
-                ("id", "ID ⚙️"),
-                ("license", "License Number ⚙️"),
-                ("type", "Vehicle Type ⚙️"),
-                ("location", "Location ⚙️"),
-                ("status", "Status ⚙️"),
-                ("reassign", "Auto-Reassign ⚙️")
+                ("select", "[x]"),
+                ("id", "ID "),
+                ("license", "License Number "),
+                ("type", "Vehicle Type "),
+                ("location", "Location "),
+                ("status", "Status "),
+                ("reassign", "Auto-Reassign ")
             ]
 
             col_keys = [c[0] for c in columns_meta]
@@ -180,7 +180,7 @@ class DispatchView:
                         match = False
                         break
                 if match:
-                    chk_symbol = "☑" if vid in self.dispatch_selected_ids else "☐"
+                    chk_symbol = "[x]" if vid in self.dispatch_selected_ids else "[ ]"
                     reassign_text = "Yes" if v['auto_reassign_recurring'] else "No"
                     tree1.insert("", tk.END, values=(chk_symbol, vid, v['license_number'], v['vehicle_type'], v['location'], v['status'], reassign_text))
 
@@ -244,13 +244,13 @@ class DispatchView:
             table_frame2.pack(fill=tk.X, padx=30, pady=5)
 
             columns_meta2 = [
-                ("select", "☑"),
-                ("id", "ID ⚙️"),
-                ("license", "License Number ⚙️"),
-                ("type", "Vehicle Type ⚙️"),
-                ("location", "Location ⚙️"),
-                ("status", "Status ⚙️"),
-                ("reassign", "Auto-Reassign ⚙️")
+                ("select", "[x]"),
+                ("id", "ID "),
+                ("license", "License Number "),
+                ("type", "Vehicle Type "),
+                ("location", "Location "),
+                ("status", "Status "),
+                ("reassign", "Auto-Reassign ")
             ]
 
             col_keys2 = [c[0] for c in columns_meta2]
@@ -296,7 +296,7 @@ class DispatchView:
                         match = False
                         break
                 if match:
-                    chk_symbol = "☑" if vid in self.assigned_selected_ids else "☐"
+                    chk_symbol = "[x]" if vid in self.assigned_selected_ids else "[ ]"
                     reassign_text = "Yes" if v['auto_reassign_recurring'] else "No"
                     tree2.insert("", tk.END, values=(chk_symbol, vid, v['license_number'], v['vehicle_type'], v['location'], v['status'], reassign_text))
 
