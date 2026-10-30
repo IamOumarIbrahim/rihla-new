@@ -8,6 +8,7 @@ from database import get_all_vehicles, get_all_events, dispatch_vehicle_combinat
 
 from .table_style import (GEAR, CHECKED, UNCHECKED, ROW_EVEN, ROW_ODD, ROW_SELECTED, TABLE_STYLE,
                           style_tables, heading_text, stripe_tags, build_count_table)
+from .cancellation import page_header
 
 ANY_TYPE = "Any vehicle type"
 ANY_LOCATION = "Any location"
@@ -100,7 +101,7 @@ class DispatchView:
             widget.destroy()
         style_tables()
 
-        tk.Label(self.scrollable_frame, text=f"Event Dispatch Panel", font=(t.FONT, 22, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 5))
+        page_header(self.scrollable_frame, "Event Dispatch Panel", self.build_dispatch_content)
 
         events = get_all_events()
         if not events:

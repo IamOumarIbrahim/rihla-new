@@ -2,6 +2,7 @@ from datetime import date, timedelta
 import tkinter as tk
 from tkinter import messagebox
 from .users_welcome import BaseWelcomeScreen
+from .cancellation import policy_line, cancelled_line, confirm_own_cancel
 from screens.event_screen import show_event_screen
 from database import (
     get_all_events, get_bookings_by_customer, cancel_booking, format_ticket_code,
@@ -417,7 +418,7 @@ class PartnerWelcomeScreen(BaseWelcomeScreen):
         self.refresh_cart_button()
 
         header_row = tk.Frame(self.scrollable_frame, bg=t.PAGE_BG)
-        header_row.pack(anchor="w", padx=30, pady=(20, 5))
+        header_row.pack(fill=tk.X, padx=30, pady=(20, 5))
         list_img = ic.get_icon("list", size=20, color=t.TEXT, master=header_row)
         if list_img:
             lbl = tk.Label(header_row, image=list_img, bg=t.PAGE_BG)
@@ -425,6 +426,10 @@ class PartnerWelcomeScreen(BaseWelcomeScreen):
             lbl.pack(side=tk.LEFT, padx=(0, 8))
         tk.Label(header_row, text=f"Partner Bookings", font=(t.FONT, 20, "bold"),
                  bg=t.PAGE_BG, fg=t.TEXT).pack(side=tk.LEFT)
+        refresh_btn = tk.Button(header_row, text="Refresh", font=(t.FONT, 9, "bold"), bg=t.CARD_BG, fg=t.TEXT,
+                                relief="solid", bd=1, cursor="hand2", command=self.build_bookings_content)
+        refresh_btn.pack(side=tk.RIGHT, ipadx=10, ipady=3)
+        t.add_hover(refresh_btn, t.CARD_BG, t.CHIP_HOVER)
 
         tk.Label(self.scrollable_frame,
                  text="All excursions booked under your OTA partner account. Distribute ticket codes to your customers.",
@@ -480,6 +485,12 @@ class PartnerWelcomeScreen(BaseWelcomeScreen):
             code_color = t.TEXT if b["status"] == "Confirmed" else t.TEXT_MUTED
             tk.Label(card, text=format_ticket_code(b["ticket_code"]), font=("Consolas", 15, "bold"),
                      bg=t.CARD_BG, fg=code_color).pack(anchor="w", padx=15, pady=(0, 5))
+            if b["status"] == "Cancelled":
+                tk.Label(card, text=cancelled_line(b, self.email), font=(t.FONT, 9), bg=t.CARD_BG, fg="#c0392b",
+                         wraplength=600, justify="left").pack(anchor="w", padx=15, pady=(0, 4))
+            elif b["status"] == "Confirmed":
+                tk.Label(card, text=policy_line(b), font=(t.FONT, 9, "italic"), bg=t.CARD_BG,
+                         fg=t.TEXT_MUTED).pack(anchor="w", padx=15, pady=(0, 4))
 
             btn_row = tk.Frame(card, bg=t.CARD_BG)
             btn_row.pack(anchor="w", padx=15, pady=(5, 5))
@@ -511,14 +522,14 @@ class PartnerWelcomeScreen(BaseWelcomeScreen):
         self.root.after(1500, lambda: button.config(text=orig_text))
 
     def handle_cancel(self, booking):
-        if not messagebox.askyesno("Cancel Booking", f"Cancel booking for '{booking['event_title']}'?"):
+        if not confirm_own_cancel(booking):
             return
         res = cancel_booking(booking["id"], self.email)
         if res["success"]:
-            messagebox.showinfo("Cancelled", "Booking has been cancelled and capacity released.")
-            self.build_bookings_content()
+            messagebox.showinfo("Cancelled", f"{res['message']}\n\nThe seats have been released.")
         else:
             messagebox.showerror("Error", res["message"])
+        self.build_bookings_content()
 
 
 def show_partner_welcome(root, email, tab="explore"):

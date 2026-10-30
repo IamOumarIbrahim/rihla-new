@@ -389,6 +389,13 @@ def seed():
                  booking_status, client_name, f"{created.isoformat()} 10:15:00"),
             )
             booking_id = track("bookings", cur.lastrowid)
+            if booking_status == "Cancelled":
+                # Cancelled by the customer well before the 48 hour mark: full refund, VAT included.
+                conn.execute(
+                    "UPDATE bookings SET cancelled_at = ?, cancelled_by = ?, cancelled_by_role = 'Customer', "
+                    "cancel_reason = 'Change of plans', refund_percent = 100, refund_amount = ? WHERE id = ?",
+                    (f"{(TODAY - timedelta(days=1)).isoformat()} 18:40:00", email, total, booking_id),
+                )
             if rating is not None:
                 stamp = f"{(day + timedelta(days=1)).isoformat()} 12:00:00"
                 cur = conn.execute(

@@ -17,6 +17,7 @@ from api_client import (  # explicit re-exports for IDE support
     create_event, update_event, delete_event,
     get_event_capacity, get_event_demand, count_active_bookings,
     create_booking, get_bookings_by_customer, get_bookings_by_vendor, cancel_booking,
+    vendor_cancel_booking, get_all_bookings, admin_cancel_booking,
     verify_ticket_code, format_ticket_code,
     create_support_ticket, get_support_tickets_by_customer,
     get_open_support_tickets, resolve_support_ticket,

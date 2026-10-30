@@ -286,9 +286,22 @@ def get_bookings_by_vendor(vendor_email):
     return r.get("bookings", [])
 
 
-def cancel_booking(booking_id, customer_email):
-    r = _post(f"/bookings/{booking_id}/cancel", {"customer_email": customer_email})
+def cancel_booking(booking_id, customer_email, reason=""):
+    r = _post(f"/bookings/{booking_id}/cancel", {"customer_email": customer_email, "reason": reason})
     return r
+
+
+def vendor_cancel_booking(booking_id, vendor_email, reason):
+    return _post(f"/bookings/{booking_id}/vendor_cancel", {"vendor_email": vendor_email, "reason": reason})
+
+
+def get_all_bookings(admin_email):
+    r = _get("/admin/bookings", admin_email=admin_email)
+    return r.get("bookings", [])
+
+
+def admin_cancel_booking(booking_id, admin_email, reason):
+    return _post(f"/admin/bookings/{booking_id}/cancel", {"admin_email": admin_email, "reason": reason})
 
 
 # -----------------------------------------------------------------------

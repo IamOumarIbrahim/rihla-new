@@ -81,6 +81,19 @@ Other useful values:
   Leave them as they are; changing them makes the demo payment fail on purpose.
 - Sign-up: every account type except Customer needs a 16-digit SSN (any 16 digits that are not all the same). Admin accounts cannot be registered.
 
+## Cancellations and refunds
+
+- Customers and partners cancel their own bookings from *My Bookings* / *Partner Bookings*:
+  a full refund 48 hours or more before the event starts, 50% from 48 to 24 hours, and no
+  cancelling in the last 24 hours. VAT is refunded in the same proportion.
+- Vendors (their own events) and admins (any booking) can cancel until the event starts,
+  always with a full refund, and must give the customer a reason.
+- Deleting an event cancels its upcoming unused bookings with a full refund.
+- Every cancellation records when, who, why and the refund; the booking card, the vendor table and
+  the admin *Bookings* page show it. Cancelling frees the seats at once.
+- Payments are a demo, so a refund is recorded, not sent anywhere.
+- Pages that show other people's changes (bookings, staff schedule, dispatch) have a **Refresh** button.
+
 ## Demo script
 
 A suggested order for the final demo, about 10 minutes. Run `dummy_data.ps1` right before so the dates are fresh.
@@ -90,12 +103,13 @@ A suggested order for the final demo, about 10 minutes. Run `dummy_data.ps1` rig
      **Open in Google Maps**, and the capacity bar ("N of TOTAL remaining", "Hurry up!" when almost full).
    - Pick a date and guests, book, pay with the prefilled card. Show the VAT line, the currency
      picker, the Booking Details window and **Download PDF** (saved to Downloads).
-   - *My Bookings*: the new ticket and its 16-digit code; cancel an unused one.
+   - *My Bookings*: the new ticket and its 16-digit code; cancel an unused one and show the refund line.
    - *My Experiences*: past trips and reviews. *Support*: send a message to staff.
    - *Settings*: change the preferred currency (AED, EUR, GBP, USD).
 2. **Vendor** (vendor@email.com)
    - *My Events*: event cards with pictures; edit an event (capacity, picture, recurrence days).
    - *Bookings*: the bookings table. Click a heading with a gear to filter (for example Status = Cancelled).
+     Select a confirmed booking and cancel it with a reason (full refund).
    - *Manage Venues*: add a venue with a Google Maps link, or edit the link.
 3. **Staff** (staff@email.com)
    - *Ticket Scanner*: scan the ticket code from step 1 (or `1234567890123456`). It admits a ticket once.
@@ -109,6 +123,7 @@ A suggested order for the final demo, about 10 minutes. Run `dummy_data.ps1` rig
 6. **Admin** (admin@email.com)
    - *User Accounts*: every account with sign-up date and age; ban a demo customer, then try to log in as them.
    - *Reports*: reports sent with the *Report* button from other roles; resolve one or ban the offender.
+   - *Bookings*: every booking; cancel one with a reason and see who cancelled what and the refund.
 
 ## Project layout
 

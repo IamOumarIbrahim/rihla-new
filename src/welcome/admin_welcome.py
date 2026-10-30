@@ -4,8 +4,9 @@ from collections import Counter
 from datetime import datetime
 import theme as t
 from config import ADMIN_ROLE
-from database import get_all_users, set_user_banned, get_reports, resolve_report
+from database import get_all_users, set_user_banned, get_reports, resolve_report, get_all_bookings, admin_cancel_booking
 from .users_welcome import BaseWelcomeScreen
+from .cancellation import page_header, cancelled_line, ask_reason, cancel_button
 from .table_style import (GEAR, CHECKED, UNCHECKED, TABLE_STYLE, style_tables, heading_text, stripe_tags,
                           build_count_table)
 
@@ -65,6 +66,7 @@ class AdminWelcomeScreen(BaseWelcomeScreen):
 
         self.add_nav_button("User Accounts", self.build_users_content, icon="users")
         self.add_nav_button("Reports", self.build_reports_content, icon="alert")
+        self.add_nav_button("Bookings", self.build_bookings_content, icon="ticket")
         self.build_users_content()
 
     # ------------------------------------------------------------------
@@ -272,6 +274,91 @@ class AdminWelcomeScreen(BaseWelcomeScreen):
                   cursor="hand2", command=clear_filter).pack(side=tk.LEFT, padx=(8, 0), ipady=5, ipadx=10)
         popup.bind("<Escape>", lambda e: popup.destroy())
 
+
+    # ------------------------------------------------------------------
+    # bookings (cancel any booking with a full refund)
+    # ------------------------------------------------------------------
+    def build_bookings_content(self):
+        for widget in self.scrollable_frame.winfo_children():
+            widget.destroy()
+        style_tables()
+
+        page_header(self.scrollable_frame, "Bookings", self.build_bookings_content)
+        tk.Label(self.scrollable_frame, text="Every booking on Rihla. Cancelling here refunds the customer in full (VAT included) and needs a reason.",
+                 font=(t.FONT, 11), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=(0, 12))
+
+        try:
+            bookings = get_all_bookings(self.email)
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not load bookings: {e}")
+            return
+        if not bookings:
+            tk.Label(self.scrollable_frame, text="No bookings yet.", font=(t.FONT, 10, "italic"), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30)
+            return
+
+        columns = [("event", "Event", 220, "w"), ("date", "Date", 100, "center"), ("customer", "Booked by", 200, "w"),
+                   ("guests", "Guests", 60, "center"), ("total", "Total (AED)", 100, "e"),
+                   ("refund", "Refunded (AED)", 120, "e"), ("status", "Status", 100, "center")]
+        frame = tk.Frame(self.scrollable_frame, bg=t.CARD_BG, bd=1, relief="solid", highlightbackground=t.BORDER)
+        frame.pack(fill=tk.X, padx=30, pady=2)
+        tree = ttk.Treeview(frame, columns=[c[0] for c in columns], show="headings", height=min(len(bookings), 15),
+                            style=TABLE_STYLE, selectmode="browse")
+        stripe_tags(tree)
+        tree.tag_configure("status_Cancelled", foreground="#c0392b")
+        tree.tag_configure("status_Expired", foreground=t.TEXT_MUTED)
+        for key, heading, width, anchor in columns:
+            tree.heading(key, text=heading, anchor=anchor)
+            tree.column(key, width=width, minwidth=width, anchor=anchor, stretch=key in ("event", "customer"))
+        for i, b in enumerate(bookings):
+            refund = f"{b['refund_amount']:,.2f} ({b['refund_percent']}%)" if b.get("refund_amount") is not None else ""
+            tree.insert("", tk.END, iid=str(b["id"]), tags=("odd" if i % 2 else "even", f"status_{b['status']}"),
+                        values=[b["event_title"], b["booking_date"], b["customer_email"], b["guests"],
+                                f"{float(b['total_price']):,.2f}", refund, b["status"]])
+        scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=tree.yview)
+        tree.configure(yscrollcommand=scrollbar.set)
+        tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        by_id = {str(b["id"]): b for b in bookings}
+        action_row = tk.Frame(self.scrollable_frame, bg=t.PAGE_BG)
+        action_row.pack(fill=tk.X, padx=30, pady=(6, 10))
+        cancel_btn = cancel_button(action_row)
+        cancel_btn.pack(side=tk.LEFT, ipadx=10, ipady=4)
+        detail = tk.Label(action_row, text="Select a booking to cancel it or see its cancellation details.",
+                          font=(t.FONT, 9), bg=t.PAGE_BG, fg=t.TEXT_MUTED, wraplength=650, justify="left")
+        detail.pack(side=tk.LEFT, padx=12)
+
+        def selected_booking():
+            chosen = tree.selection()
+            return by_id.get(chosen[0]) if chosen else None
+
+        def on_select(_event=None):
+            b = selected_booking()
+            cancel_btn.config(state=tk.NORMAL if b and b["status"] == "Confirmed" else tk.DISABLED)
+            if not b:
+                return
+            if b["status"] == "Cancelled":
+                detail.config(text=cancelled_line(b, self.email), fg="#c0392b")
+            else:
+                detail.config(text=f"Ticket {b['ticket_code']}  |  {b['venue_name'] or 'Venue TBA'} at {b['event_time'] or 'TBA'}",
+                              fg=t.TEXT_MUTED)
+
+        def on_cancel():
+            b = selected_booking()
+            if not b:
+                return
+            reason = ask_reason(self.root, b)
+            if reason is None:
+                return
+            res = admin_cancel_booking(b["id"], self.email, reason)
+            if res["success"]:
+                messagebox.showinfo("Booking cancelled", res["message"])
+            else:
+                messagebox.showerror("Cannot cancel", res["message"])
+            self.build_bookings_content()
+
+        tree.bind("<<TreeviewSelect>>", on_select)
+        cancel_btn.config(command=on_cancel)
 
     # ------------------------------------------------------------------
     # reports inbox

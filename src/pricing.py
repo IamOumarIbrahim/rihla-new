@@ -31,6 +31,13 @@ def vat_breakdown(base_aed):
     return base, vat, round(base + vat, 2)
 
 
+def refund_breakdown(total_aed, percent):
+    """(base, vat, total) of a refund of percent% of a VAT-inclusive total. VAT is refunded in proportion."""
+    total = round(float(total_aed or 0) * percent / 100, 2)
+    base = round(total / (1 + VAT_RATE), 2)
+    return base, round(total - base, 2), total
+
+
 def convert(amount_aed, currency):
     return round(float(amount_aed or 0) * CURRENCY_RATES[normalize_currency(currency)], 2)
 

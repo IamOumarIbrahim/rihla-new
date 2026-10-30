@@ -347,7 +347,33 @@ def get_bookings_by_vendor(vendor_email):
 @app.route("/api/bookings/<int:booking_id>/cancel", methods=["POST"])
 def cancel_booking(booking_id):
     body = request.get_json(silent=True) or {}
-    result = events.cancel_booking(booking_id, body.get("customer_email", ""))
+    result = events.cancel_booking(booking_id, body.get("customer_email", ""), body.get("reason", ""))
+    if result["success"]:
+        return _ok(result)
+    return _err(result["message"])
+
+
+@app.route("/api/bookings/<int:booking_id>/vendor_cancel", methods=["POST"])
+def vendor_cancel_booking(booking_id):
+    body = request.get_json(silent=True) or {}
+    result = events.vendor_cancel_booking(booking_id, body.get("vendor_email", ""), body.get("reason", ""))
+    if result["success"]:
+        return _ok(result)
+    return _err(result["message"])
+
+
+@app.route("/api/admin/bookings")
+def admin_get_bookings():
+    bookings = events.get_all_bookings(request.args.get("admin_email", ""))
+    if bookings is None:
+        return _err("Only an admin can do this.", 403)
+    return _ok({"bookings": bookings})
+
+
+@app.route("/api/admin/bookings/<int:booking_id>/cancel", methods=["POST"])
+def admin_cancel_booking(booking_id):
+    body = request.get_json(silent=True) or {}
+    result = events.admin_cancel_booking(booking_id, body.get("admin_email", ""), body.get("reason", ""))
     if result["success"]:
         return _ok(result)
     return _err(result["message"])

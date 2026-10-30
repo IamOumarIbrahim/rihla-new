@@ -9,8 +9,9 @@ from database import (
     get_events_by_vendor, create_event, update_event, delete_event,
     get_vendor_categories, add_vendor_category, delete_vendor_category,
     get_venues_by_vendor, create_venue, update_venue_maps_url, delete_venue, count_active_bookings,
-    get_bookings_by_vendor, get_event_capacity, DEFAULT_EVENT_CAPACITY, MAX_EVENT_CAPACITY
+    get_bookings_by_vendor, vendor_cancel_booking, get_event_capacity, DEFAULT_EVENT_CAPACITY, MAX_EVENT_CAPACITY
 )
+from .cancellation import page_header, cancelled_line, ask_reason, cancel_button
 import theme as t
 import icons as ic
 import event_images
@@ -18,12 +19,13 @@ from map_link import venue_label
 
 # Columns of the bookings table: (key, heading, width, anchor, filterable)
 BOOKING_COLUMNS = [
-    ("event", "Event", 240, "w", True),
-    ("date", "Date", 110, "center", True),
-    ("time", "Time", 70, "center", False),
-    ("guests", "Guests", 70, "center", False),
-    ("customer", "Customer", 220, "w", True),
-    ("total", "Total (AED)", 110, "e", False),
+    ("event", "Event", 200, "w", True),
+    ("date", "Date", 100, "center", True),
+    ("time", "Time", 60, "center", False),
+    ("guests", "Guests", 60, "center", False),
+    ("customer", "Customer", 190, "w", True),
+    ("total", "Total (AED)", 100, "e", False),
+    ("refund", "Refunded (AED)", 120, "e", False),
     ("status", "Status", 110, "center", True),
 ]
 # Rows of these statuses get a text color; Confirmed and Checked in rows keep the normal text color.
@@ -115,6 +117,8 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
             return b["customer_email"]
         if col_key == "total":
             return f"{float(b['total_price']):,.2f}"
+        if col_key == "refund":
+            return f"{float(b['refund_amount']):,.2f} ({b['refund_percent']}%)" if b.get("refund_amount") is not None else ""
         if col_key == "status":
             return b["status"]
         return ""
@@ -124,11 +128,13 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
             widget.destroy()
         style_tables()
 
-        tk.Label(self.scrollable_frame, text="Bookings", font=(t.FONT, 22, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 5))
+        page_header(self.scrollable_frame, "Bookings", self.build_bookings_content)
 
         bookings = get_bookings_by_vendor(self.email)
         live = [b for b in bookings if b["status"] != "Cancelled"]
-        summary = f"{len(live)} booking(s)  |  {sum(b['guests'] for b in live)} guests  |  {sum(b['total_price'] for b in live):,.2f} AED booked"
+        refunded = sum(b["refund_amount"] or 0 for b in bookings if b["status"] == "Cancelled")
+        summary = (f"{len(live)} booking(s)  |  {sum(b['guests'] for b in live)} guests  |  "
+                   f"{sum(b['total_price'] for b in live):,.2f} AED booked  |  {refunded:,.2f} AED refunded")
         tk.Label(self.scrollable_frame, text=summary, font=(t.FONT, 11), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=(0, 10))
 
         if not bookings:
@@ -145,7 +151,7 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
         frame.pack(fill=tk.X, padx=30, pady=2)
         col_keys = [c[0] for c in BOOKING_COLUMNS]
         tree = ttk.Treeview(frame, columns=col_keys, show="headings", height=min(max(len(visible), 3), 15),
-                            style=TABLE_STYLE, selectmode="none")
+                            style=TABLE_STYLE, selectmode="browse")
         stripe_tags(tree)
         for status, color in STATUS_COLORS.items():
             tree.tag_configure(f"status_{status}", foreground=color)
@@ -159,13 +165,57 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
             tree.column(col_key, width=width, minwidth=width, anchor=anchor, stretch=col_key in ("event", "customer"))
 
         for i, b in enumerate(visible):
-            tree.insert("", tk.END, values=[self._booking_val(b, ck) for ck in col_keys],
+            tree.insert("", tk.END, iid=str(b["id"]), values=[self._booking_val(b, ck) for ck in col_keys],
                         tags=("odd" if i % 2 else "even", f"status_{b['status']}"))
 
         scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=tree.yview)
         tree.configure(yscrollcommand=scrollbar.set)
         tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Select a row to see its cancellation details, or to cancel it (full refund, reason required).
+        by_id = {str(b["id"]): b for b in visible}
+        action_row = tk.Frame(self.scrollable_frame, bg=t.PAGE_BG)
+        action_row.pack(fill=tk.X, padx=30, pady=(6, 10))
+        cancel_btn = cancel_button(action_row)
+        cancel_btn.pack(side=tk.LEFT, ipadx=10, ipady=4)
+        detail = tk.Label(action_row, text="Select a booking to cancel it or see its cancellation details.",
+                          font=(t.FONT, 9), bg=t.PAGE_BG, fg=t.TEXT_MUTED, wraplength=650, justify="left")
+        detail.pack(side=tk.LEFT, padx=12)
+
+        def selected_booking():
+            chosen = tree.selection()
+            return by_id.get(chosen[0]) if chosen else None
+
+        def on_select(_event=None):
+            b = selected_booking()
+            cancel_btn.config(state=tk.NORMAL if b and b["status"] == "Confirmed" else tk.DISABLED)
+            if not b:
+                return
+            if b["status"] == "Cancelled":
+                detail.config(text=cancelled_line(b, self.email), fg="#c0392b")
+            elif b["status"] == "Confirmed":
+                detail.config(text=f"{b['customer_email']}, {b['guests']} guest(s). Cancelling refunds the customer in full.",
+                              fg=t.TEXT_MUTED)
+            else:
+                detail.config(text=f"This booking is {b['status'].lower()} and cannot be cancelled.", fg=t.TEXT_MUTED)
+
+        def on_cancel():
+            b = selected_booking()
+            if not b:
+                return
+            reason = ask_reason(self.root, b)
+            if reason is None:
+                return
+            res = vendor_cancel_booking(b["id"], self.email, reason)
+            if res["success"]:
+                messagebox.showinfo("Booking cancelled", res["message"])
+            else:
+                messagebox.showerror("Cannot cancel", res["message"])
+            self.build_bookings_content()
+
+        tree.bind("<<TreeviewSelect>>", on_select)
+        cancel_btn.config(command=on_cancel)
 
         if not visible:
             tk.Label(self.scrollable_frame, text=f"All rows are hidden by your column filters. Click a {GEAR} heading to change them.",
@@ -659,7 +709,7 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
 
     def handle_delete(self, event_id):
         active = count_active_bookings(event_id)
-        warning = f"\n\n{active} active booking(s) will be cancelled and their tickets will stop working." if active else ""
+        warning = f"\n\n{active} upcoming booking(s) will be cancelled with a full refund, and their tickets will stop working." if active else ""
         if messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this event listing?" + warning):
             delete_event(event_id)
             messagebox.showinfo("Deleted", "Event listing deleted successfully.")

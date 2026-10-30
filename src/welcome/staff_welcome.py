@@ -6,6 +6,7 @@ import icons as ic
 from map_link import venue_label
 from digit_boxes import DigitBoxes
 from .dispatch_view import ROW_EVEN, ROW_ODD
+from .cancellation import page_header
 from datetime import date
 from database import (
     get_all_venues, get_events_by_venue, verify_ticket_code,
@@ -156,7 +157,7 @@ class StaffWelcomeScreen(BaseWelcomeScreen):
     def build_schedule_content(self):
         for widget in self.scrollable_frame.winfo_children():
             widget.destroy()
-        tk.Label(self.scrollable_frame, text=f"Staff Schedule", font=(t.FONT, 22, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 10))
+        page_header(self.scrollable_frame, "Staff Schedule", self.build_schedule_content, pady=(20, 10))
         self.render_today_schedule()
 
 

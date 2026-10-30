@@ -12,7 +12,8 @@ import database_core
 
 
 def next_weekday(names):
-    day = datetime.date.today()
+    # At least 3 days ahead, so the booker can still cancel with a full refund.
+    day = datetime.date.today() + datetime.timedelta(days=3)
     while day.strftime("%A") not in names:
         day += datetime.timedelta(days=1)
     return day
@@ -135,6 +136,129 @@ class BookingTests(unittest.TestCase):
         d.delete_event(self.safari["id"])
         self.assertFalse(d.create_support_ticket("b@email.com", "Help", message, self.safari["title"])["success"])
         self.assertTrue(d.create_support_ticket("a@email.com", "Help", message, self.safari["title"])["success"])
+
+
+class CancellationTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        database_core.DB_PATH = os.path.join(self.tmp.name, "test.db")
+        d.init_db()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def event_in(self, hours, capacity=10, title="Soon"):
+        """A one-time 100 AED event starting the given number of hours from now."""
+        start = (datetime.datetime.now() + datetime.timedelta(hours=hours)).replace(second=0, microsecond=0)
+        d.create_event(title, "General", "100 AED", "a long enough description", "vendor@email.com", 1,
+                       start.strftime("%Y-%m-%d %H:%M"), "One-Time", "N/A", start.strftime("%H:%M"), capacity=capacity)
+        event = [e for e in d.get_all_events() if e["title"] == title][0]
+        return event, start.date().isoformat()
+
+    def book(self, hours, email="a@email.com", guests=2):
+        event, day = self.event_in(hours)
+        return d.create_booking(email, event["id"], day, guests)["booking"]
+
+    def booking_row(self, booking_id, email="a@email.com"):
+        return [b for b in d.get_bookings_by_customer(email) if b["id"] == booking_id][0]
+
+    def test_refund_policy_steps(self):
+        now = datetime.datetime(2030, 1, 10, 12, 0)
+        start = datetime.datetime(2030, 1, 12, 12, 0)
+        self.assertEqual(d.refund_percent_for(start, now), 100)  # exactly 48h
+        self.assertEqual(d.refund_percent_for(start, now + datetime.timedelta(minutes=1)), 50)
+        self.assertEqual(d.refund_percent_for(start, now + datetime.timedelta(hours=24)), 50)  # exactly 24h
+        self.assertIsNone(d.refund_percent_for(start, now + datetime.timedelta(hours=24, minutes=1)))
+
+    def test_vat_is_refunded_in_proportion(self):
+        self.assertEqual(d.split_refund(210, 100), (200, 10, 210))
+        self.assertEqual(d.split_refund(210, 50), (100, 5, 105))
+
+    def test_full_refund_and_audit_trail(self):
+        booking = self.book(72)
+        self.assertTrue(self.booking_row(booking["id"])["can_cancel"])
+        result = d.cancel_booking(booking["id"], "a@email.com", "Plans changed")
+        self.assertTrue(result["success"])
+        self.assertEqual(result["refund"], {"percent": 100, "base": 200, "vat": 10, "total": 210})
+        row = self.booking_row(booking["id"])
+        self.assertEqual((row["status"], row["refund_percent"], row["refund_amount"]), ("Cancelled", 100, 210))
+        self.assertEqual((row["cancelled_by"], row["cancelled_by_role"], row["cancel_reason"]),
+                         ("a@email.com", "Customer", "Plans changed"))
+        self.assertTrue(row["cancelled_at"])
+        self.assertFalse(d.cancel_booking(booking["id"], "a@email.com")["success"])
+
+    def test_half_refund_between_24_and_48_hours(self):
+        booking = self.book(30)
+        self.assertEqual(self.booking_row(booking["id"])["refund_if_cancelled"], 50)
+        result = d.cancel_booking(booking["id"], "a@email.com")
+        self.assertEqual(result["refund"]["total"], 105)
+
+    def test_booker_cannot_cancel_in_the_last_24_hours(self):
+        booking = self.book(5)
+        self.assertFalse(self.booking_row(booking["id"])["can_cancel"])
+        result = d.cancel_booking(booking["id"], "a@email.com")
+        self.assertFalse(result["success"])
+        self.assertIn("24 hours", result["message"])
+        self.assertTrue(d.verify_ticket_code(booking["ticket_code"])["success"])
+
+    def test_vendor_cancels_late_with_full_refund_and_a_reason(self):
+        booking = self.book(5)
+        self.assertFalse(d.vendor_cancel_booking(booking["id"], "vendor@email.com", "")["success"])
+        self.assertFalse(d.vendor_cancel_booking(booking["id"], "someone@email.com", "Weather")["success"])
+        result = d.vendor_cancel_booking(booking["id"], "vendor@email.com", "Sandstorm warning")
+        self.assertTrue(result["success"])
+        self.assertEqual(result["refund"]["percent"], 100)
+        row = self.booking_row(booking["id"])
+        self.assertEqual((row["cancelled_by_role"], row["cancel_reason"]), ("Vendor", "Sandstorm warning"))
+        self.assertFalse(d.verify_ticket_code(booking["ticket_code"])["success"])
+
+    def test_nobody_cancels_after_the_start(self):
+        event, day = self.event_in(-1, title="Started")
+        booking = d.create_booking("a@email.com", event["id"], day, 1)["booking"]
+        if booking is None:  # started yesterday (just after midnight): nothing to test
+            return
+        self.assertFalse(d.vendor_cancel_booking(booking["id"], "vendor@email.com", "Too late")["success"])
+        self.assertIn("already started", d.cancel_booking(booking["id"], "a@email.com")["message"])
+
+    def test_only_admins_cancel_any_booking(self):
+        booking = self.book(5)
+        self.assertIsNone(d.get_all_bookings("vendor@email.com"))
+        self.assertFalse(d.admin_cancel_booking(booking["id"], "vendor@email.com", "No")["success"])
+        self.assertTrue(any(b["id"] == booking["id"] for b in d.get_all_bookings("admin@email.com")))
+        result = d.admin_cancel_booking(booking["id"], "admin@email.com", "Duplicate booking")
+        self.assertTrue(result["success"])
+        self.assertEqual(self.booking_row(booking["id"])["cancelled_by_role"], "Admin")
+
+    def test_deleting_an_event_refunds_upcoming_bookings(self):
+        event, day = self.event_in(72, title="Doomed")
+        booking = d.create_booking("a@email.com", event["id"], day, 2)["booking"]
+        d.delete_event(event["id"])
+        row = self.booking_row(booking["id"])
+        self.assertEqual((row["status"], row["refund_amount"], row["cancelled_by"]), ("Cancelled", 210, "vendor@email.com"))
+
+    def test_demand_counts_upcoming_bookings_only(self):
+        event, day = self.event_in(72, title="Counted")
+        d.create_booking("a@email.com", event["id"], day, 2)
+        import sqlite3
+        conn = sqlite3.connect(database_core.DB_PATH)
+        conn.execute("INSERT INTO tickets (ticket_code, event_title, customer_email, status) VALUES ('1111222233334444', 'Counted', 'b@email.com', 'Valid')")
+        conn.execute("INSERT INTO bookings (customer_email, event_id, event_title, booking_date, guests, total_price, ticket_code, status) "
+                     "VALUES ('b@email.com', ?, 'Counted', '2020-01-01', 5, 525, '1111222233334444', 'Confirmed')", (event["id"],))
+        conn.commit()
+        conn.close()
+        self.assertEqual(d.get_event_demand(event["id"]), (1, 2))
+        self.assertEqual(d.count_active_bookings(event["id"]), 1)
+
+    def test_failed_cart_checkout_keeps_no_bookings(self):
+        event, day = self.event_in(72, capacity=5, title="Small")
+        self.assertTrue(d.add_to_cart("partner@email.com", event["id"], day, 3)["success"])
+        self.assertTrue(d.add_to_cart("partner@email.com", event["id"], day, 3)["success"])
+        result = d.checkout_cart("partner@email.com")
+        self.assertFalse(result["success"])
+        self.assertIn("payment was not taken", result["message"])
+        self.assertEqual(d.get_bookings_by_customer("partner@email.com"), [])
+        self.assertEqual(d.get_cart_count("partner@email.com"), 2)
+        self.assertEqual(d.get_event_capacity(event["id"], day)["remaining"], 5)
 
 
 class CapacityTests(unittest.TestCase):

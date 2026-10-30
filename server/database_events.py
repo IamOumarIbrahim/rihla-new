@@ -1,10 +1,17 @@
-from datetime import date
+from datetime import date, datetime, time as dtime
 import secrets
-from database_core import _connect, DEFAULT_EVENT_CAPACITY, MAX_EVENT_CAPACITY, MAX_GUESTS_PER_BOOKING
+from database_core import _connect, _now, is_admin, get_role, DEFAULT_EVENT_CAPACITY, MAX_EVENT_CAPACITY, MAX_GUESTS_PER_BOOKING
 
 
 # Mandatory VAT added on top of every booking's base price.
 VAT_RATE = 0.05
+
+# Cancellation policy for customers and partners (hours before the event starts).
+# 48h or more: full refund. 24h to 48h: half refund. Under 24h: cannot cancel.
+# A vendor or admin cancelling (or deleting the event) always refunds in full.
+FULL_REFUND_HOURS = 48
+HALF_REFUND_HOURS = 24
+MAX_CANCEL_REASON = 300
 
 
 def add_vat(base_price):
@@ -152,16 +159,21 @@ def update_event(event_id, title, category, price, description, venue_id, event_
 
 def delete_event(event_id):
     with _connect() as conn:
+        owner = conn.execute("SELECT vendor_email FROM events WHERE id = ?", (event_id,)).fetchone()
+        vendor_email = owner[0] if owner else ""
         conn.execute(
             "UPDATE vehicles SET status = 'Available' WHERE status = 'Assigned' AND id IN "
             "(SELECT vehicle_id FROM event_vehicles WHERE event_id = ? AND status = 'Assigned')",
             (event_id,),
         )
         conn.execute("DELETE FROM event_vehicles WHERE event_id = ?", (event_id,))
+        # Upcoming unused bookings are cancelled with a full refund; past ones stay as they were.
         conn.execute(
-            "UPDATE bookings SET status = 'Cancelled' WHERE event_id = ? AND status = 'Confirmed' "
+            "UPDATE bookings SET status = 'Cancelled', cancelled_at = ?, cancelled_by = ?, cancelled_by_role = 'Vendor', "
+            "cancel_reason = ?, refund_percent = 100, refund_amount = total_price "
+            "WHERE event_id = ? AND status = 'Confirmed' AND booking_date >= ? "
             "AND ticket_code IN (SELECT ticket_code FROM tickets WHERE status = 'Valid')",
-            (event_id,),
+            (_now(), vendor_email, "The vendor removed this event.", event_id, date.today().isoformat()),
         )
         conn.execute(
             "UPDATE tickets SET status = 'Cancelled' WHERE status = 'Valid' "
@@ -172,19 +184,21 @@ def delete_event(event_id):
 
 
 def count_active_bookings(event_id):
+    """Upcoming (today or later) bookings that are still confirmed."""
     with _connect() as conn:
         return conn.execute(
-            "SELECT COUNT(*) FROM bookings WHERE event_id = ? AND status = 'Confirmed'",
-            (event_id,),
+            "SELECT COUNT(*) FROM bookings WHERE event_id = ? AND status = 'Confirmed' AND booking_date >= ?",
+            (event_id, date.today().isoformat()),
         ).fetchone()[0]
 
 
 def get_event_demand(event_id):
-    """(active_bookings_count, total_guests_booked)."""
+    """(upcoming_bookings_count, upcoming_guests_booked), counting today and later only."""
     with _connect() as conn:
         row = conn.execute(
-            "SELECT COUNT(*), COALESCE(SUM(guests), 0) FROM bookings WHERE event_id = ? AND status = 'Confirmed'",
-            (event_id,),
+            "SELECT COUNT(*), COALESCE(SUM(guests), 0) FROM bookings "
+            "WHERE event_id = ? AND status = 'Confirmed' AND booking_date >= ?",
+            (event_id, date.today().isoformat()),
         ).fetchone()
     return (row[0], row[1]) if row else (0, 0)
 
@@ -369,6 +383,13 @@ def create_booking(customer_email, event_id, booking_date, guests, is_partner=Fa
     Customers can book multiple events and further book the same event if they wish.
     Partners can book extended capacity up to the event's total remaining seats.
     """
+    with _connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        return _book(conn, customer_email, event_id, booking_date, guests, is_partner, client_name)
+
+
+def _book(conn, customer_email, event_id, booking_date, guests, is_partner=False, client_name=""):
+    """create_booking's work, inside a transaction the caller already opened."""
     def refuse(message):
         return {"success": False, "message": message, "booking": None}
 
@@ -388,44 +409,42 @@ def create_booking(customer_email, event_id, booking_date, guests, is_partner=Fa
     if day < date.today():
         return refuse("This date is in the past. Please choose another date.")
 
-    with _connect() as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        event = conn.execute(
-            "SELECT e.title, e.price, e.is_recurring, e.recur_day, e.event_datetime, e.recur_time, v.name "
-            "FROM events e LEFT JOIN venues v ON v.id = e.venue_id WHERE e.id = ?",
-            (event_id,),
-        ).fetchone()
-        if not event:
-            return refuse("This event no longer exists.")
-        title, price, is_recurring, recur_day, event_datetime, recur_time, venue_name = event
+    event = conn.execute(
+        "SELECT e.title, e.price, e.is_recurring, e.recur_day, e.event_datetime, e.recur_time, v.name "
+        "FROM events e LEFT JOIN venues v ON v.id = e.venue_id WHERE e.id = ?",
+        (event_id,),
+    ).fetchone()
+    if not event:
+        return refuse("This event no longer exists.")
+    title, price, is_recurring, recur_day, event_datetime, recur_time, venue_name = event
 
-        if not _event_allows_date(is_recurring, recur_day, event_datetime, day):
-            return refuse("This event is not available on the date you chose.")
+    if not _event_allows_date(is_recurring, recur_day, event_datetime, day):
+        return refuse("This event is not available on the date you chose.")
 
-        # Note: Customers can further book the same event if they wish.
-        capacity = _capacity_info(conn, event_id, day)
-        if guests > capacity["remaining"]:
-            if capacity["remaining"] == 0:
-                return refuse(f"Sorry, this event is fully booked on that date (capacity {capacity['total']}).")
-            return refuse(
-                f"Not enough seats. Only {capacity['remaining']} of {capacity['total']} seats are left "
-                f"on that date, and you asked for {guests}."
-            )
-
-        code = _new_ticket_code(conn)
-        base, vat, total = add_vat(price_to_int(price) * guests)
-        event_time = recur_time or str(event_datetime or "")[11:16]
-
-        conn.execute(
-            "INSERT INTO tickets (ticket_code, event_title, customer_email, status) VALUES (?, ?, ?, 'Valid')",
-            (code, title, customer_email),
+    # Note: Customers can further book the same event if they wish.
+    capacity = _capacity_info(conn, event_id, day)
+    if guests > capacity["remaining"]:
+        if capacity["remaining"] == 0:
+            return refuse(f"Sorry, this event is fully booked on that date (capacity {capacity['total']}).")
+        return refuse(
+            f"Not enough seats. Only {capacity['remaining']} of {capacity['total']} seats are left "
+            f"on that date, and you asked for {guests}."
         )
-        cursor = conn.execute(
-            "INSERT INTO bookings (customer_email, event_id, event_title, venue_name, booking_date, event_time, "
-            "guests, total_price, ticket_code, status, client_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Confirmed', ?)",
-            (customer_email, event_id, title, venue_name, day.isoformat(), event_time, guests, total, code, client_name),
-        )
-        booking_id = cursor.lastrowid
+
+    code = _new_ticket_code(conn)
+    base, vat, total = add_vat(price_to_int(price) * guests)
+    event_time = recur_time or str(event_datetime or "")[11:16]
+
+    conn.execute(
+        "INSERT INTO tickets (ticket_code, event_title, customer_email, status) VALUES (?, ?, ?, 'Valid')",
+        (code, title, customer_email),
+    )
+    cursor = conn.execute(
+        "INSERT INTO bookings (customer_email, event_id, event_title, venue_name, booking_date, event_time, "
+        "guests, total_price, ticket_code, status, client_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Confirmed', ?)",
+        (customer_email, event_id, title, venue_name, day.isoformat(), event_time, guests, total, code, client_name),
+    )
+    booking_id = cursor.lastrowid
 
     return {
         "success": True,
@@ -438,80 +457,173 @@ def create_booking(customer_email, event_id, booking_date, guests, is_partner=Fa
     }
 
 
+# --- Bookings: listing and cancelling ---
+_BOOKING_SELECT = (
+    "SELECT b.id, b.event_id, b.event_title, b.venue_name, b.booking_date, b.event_time, b.guests, "
+    "b.total_price, b.ticket_code, b.status, t.status, b.client_name, b.customer_email, "
+    "b.cancelled_at, b.cancelled_by, b.cancelled_by_role, b.cancel_reason, b.refund_percent, b.refund_amount "
+    "FROM bookings b LEFT JOIN tickets t ON t.ticket_code = b.ticket_code "
+)
+
+
+def _event_start(booking_date, event_time):
+    """When the booked event starts. A booking without a time counts from midnight."""
+    try:
+        hour, minute = (int(x) for x in (event_time or "00:00").split(":")[:2])
+    except ValueError:
+        hour, minute = 0, 0
+    return datetime.combine(date.fromisoformat(booking_date), dtime(hour, minute))
+
+
+def refund_percent_for(start, now=None):
+    """Refund a customer or partner gets for cancelling now: 100, 50, or None when it is too late to cancel."""
+    hours_left = (start - (now or datetime.now())).total_seconds() / 3600
+    if hours_left >= FULL_REFUND_HOURS:
+        return 100
+    if hours_left >= HALF_REFUND_HOURS:
+        return 50
+    return None
+
+
+def split_refund(total_price, percent):
+    """(base, vat, total) of a refund. VAT is refunded in the same proportion as the price."""
+    total = round(float(total_price or 0) * percent / 100, 2)
+    base = round(total / (1 + VAT_RATE), 2)
+    return base, round(total - base, 2), total
+
+
+def _booking_dict(r, now):
+    booking_status, ticket_status = r[9], r[10]
+    if booking_status == "Cancelled" or ticket_status == "Cancelled":
+        shown = "Cancelled"
+    elif ticket_status == "Used":
+        shown = "Checked in"
+    elif r[4] < now.date().isoformat():
+        shown = "Expired"
+    else:
+        shown = "Confirmed"
+    refund_if_cancelled = refund_percent_for(_event_start(r[4], r[5]), now) if shown == "Confirmed" else None
+    return {
+        "id": r[0], "event_id": r[1], "event_title": r[2], "venue_name": r[3], "booking_date": r[4],
+        "event_time": r[5], "guests": r[6], "total_price": r[7], "ticket_code": r[8],
+        "status": shown, "client_name": r[11] or "", "customer_email": r[12],
+        # The booker can cancel while the policy still gives a refund; refund_if_cancelled is that percent.
+        "can_cancel": refund_if_cancelled is not None, "refund_if_cancelled": refund_if_cancelled,
+        "cancelled_at": r[13], "cancelled_by": r[14], "cancelled_by_role": r[15], "cancel_reason": r[16] or "",
+        "refund_percent": r[17], "refund_amount": r[18],
+    }
+
+
 def get_bookings_by_customer(customer_email):
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT b.id, b.event_id, b.event_title, b.venue_name, b.booking_date, b.event_time, b.guests, "
-            "b.total_price, b.ticket_code, b.status, t.status, b.client_name "
-            "FROM bookings b LEFT JOIN tickets t ON t.ticket_code = b.ticket_code "
-            "WHERE lower(b.customer_email) = lower(?) ORDER BY b.booking_date, b.id",
+            _BOOKING_SELECT + "WHERE lower(b.customer_email) = lower(?) ORDER BY b.booking_date, b.id",
             ((customer_email or "").strip(),),
         ).fetchall()
-
-    today = date.today().isoformat()
-    bookings = []
-    for r in rows:
-        booking_status, ticket_status = r[9], r[10]
-        if booking_status == "Cancelled" or ticket_status == "Cancelled":
-            shown = "Cancelled"
-        elif ticket_status == "Used":
-            shown = "Checked in"
-        elif r[4] < today:
-            shown = "Expired"
-        else:
-            shown = "Confirmed"
-        bookings.append({
-            "id": r[0], "event_id": r[1], "event_title": r[2], "venue_name": r[3], "booking_date": r[4],
-            "event_time": r[5], "guests": r[6], "total_price": r[7], "ticket_code": r[8],
-            "status": shown, "can_cancel": shown == "Confirmed",
-            "client_name": r[11] if len(r) > 11 and r[11] else "",
-        })
-    return bookings
+    now = datetime.now()
+    return [_booking_dict(r, now) for r in rows]
 
 
 def get_bookings_by_vendor(vendor_email):
     with _connect() as conn:
-        rows = conn.execute('''
-            SELECT b.id, b.event_title, b.venue_name, b.booking_date, b.event_time, b.guests, b.total_price,
-                   b.customer_email, b.ticket_code, b.status, t.status
-            FROM bookings b
-            JOIN events e ON e.id = b.event_id
-            LEFT JOIN tickets t ON t.ticket_code = b.ticket_code
-            WHERE lower(e.vendor_email) = lower(?)
-            ORDER BY b.booking_date DESC, b.id DESC
-        ''', ((vendor_email or "").strip(),)).fetchall()
-
-    result = []
-    for r in rows:
-        b_status, t_status = r[9], r[10]
-        shown = "Cancelled" if (b_status == "Cancelled" or t_status == "Cancelled") else ("Checked in" if t_status == "Used" else "Confirmed")
-        result.append({
-            "id": r[0], "event_title": r[1], "venue_name": r[2], "booking_date": r[3], "event_time": r[4],
-            "guests": r[5], "total_price": r[6], "customer_email": r[7], "ticket_code": r[8], "status": shown,
-        })
-    return result
+        rows = conn.execute(
+            _BOOKING_SELECT + "JOIN events e ON e.id = b.event_id "
+            "WHERE lower(e.vendor_email) = lower(?) ORDER BY b.booking_date DESC, b.id DESC",
+            ((vendor_email or "").strip(),),
+        ).fetchall()
+    now = datetime.now()
+    return [_booking_dict(r, now) for r in rows]
 
 
-def cancel_booking(booking_id, customer_email):
+def get_all_bookings(admin_email):
+    """Every booking, newest date first. None when the caller is not an admin."""
+    if not is_admin(admin_email):
+        return None
     with _connect() as conn:
+        rows = conn.execute(_BOOKING_SELECT + "ORDER BY b.booking_date DESC, b.id DESC").fetchall()
+    now = datetime.now()
+    return [_booking_dict(r, now) for r in rows]
+
+
+def _cancel(booking_id, actor_email, actor_role, reason, owner_check, by_operator):
+    """Cancels one booking and records who did it, why, and the refund.
+    owner_check(booking_row) returns an error message when the actor may not cancel this booking.
+    by_operator: a vendor or admin; they can cancel until the event starts, always with a full refund.
+    """
+    def refuse(message):
+        return {"success": False, "message": message}
+
+    reason = (reason or "").strip()
+    if len(reason) > MAX_CANCEL_REASON:
+        return refuse(f"The reason is too long (maximum {MAX_CANCEL_REASON} characters).")
+    if by_operator and not reason:
+        return refuse("Please give the customer a reason for the cancellation.")
+
+    with _connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         row = conn.execute(
-            "SELECT ticket_code, booking_date, status FROM bookings WHERE id = ? AND lower(customer_email) = lower(?)",
-            (booking_id, (customer_email or "").strip()),
+            "SELECT b.ticket_code, b.booking_date, b.event_time, b.status, b.total_price, b.customer_email, e.vendor_email "
+            "FROM bookings b LEFT JOIN events e ON e.id = b.event_id WHERE b.id = ?",
+            (booking_id,),
         ).fetchone()
-        if not row:
-            return {"success": False, "message": "Booking not found."}
-        code, day, status = row
+        problem = "Booking not found." if not row else owner_check(row)
+        if problem:
+            return refuse(problem)
+        code, day, event_time, status, total_price = row[:5]
+        if status == "Cancelled":
+            return refuse("This booking is already cancelled.")
         if status != "Confirmed":
-            return {"success": False, "message": "This booking is already cancelled."}
-        if day < date.today().isoformat():
-            return {"success": False, "message": "Past bookings cannot be cancelled."}
+            return refuse("This booking cannot be cancelled.")
+
+        start = _event_start(day, event_time)
+        started = datetime.now() >= start
+        percent = 100 if by_operator else refund_percent_for(start)
+        if started:
+            return refuse("This event has already started, so the booking cannot be cancelled.")
+        if percent is None:
+            return refuse(f"Cancellations close {HALF_REFUND_HOURS} hours before the event starts.")
+
         updated = conn.execute(
             "UPDATE tickets SET status = 'Cancelled' WHERE ticket_code = ? AND status = 'Valid'", (code,)
         ).rowcount
         if not updated:
-            return {"success": False, "message": "This ticket was already used, so the booking cannot be cancelled."}
-        conn.execute("UPDATE bookings SET status = 'Cancelled' WHERE id = ?", (booking_id,))
-    return {"success": True, "message": "Booking cancelled."}
+            return refuse("This ticket was already used, so the booking cannot be cancelled.")
+        base, vat, refund = split_refund(total_price, percent)
+        conn.execute(
+            "UPDATE bookings SET status = 'Cancelled', cancelled_at = ?, cancelled_by = ?, cancelled_by_role = ?, "
+            "cancel_reason = ?, refund_percent = ?, refund_amount = ? WHERE id = ?",
+            (_now(), (actor_email or "").strip(), actor_role, reason, percent, refund, booking_id),
+        )
+    return {
+        "success": True,
+        "message": f"Booking cancelled. {refund:,.2f} AED ({percent}%, VAT included) will be refunded to the original payment method.",
+        "refund": {"percent": percent, "base": base, "vat": vat, "total": refund},
+    }
+
+
+def cancel_booking(booking_id, customer_email, reason=""):
+    """The customer or partner who made the booking cancels it, under the refund policy."""
+    email = (customer_email or "").strip()
+
+    def is_booker(row):
+        return None if row[5].lower() == email.lower() else "Booking not found."
+    return _cancel(booking_id, email, get_role(email), reason, is_booker, by_operator=False)
+
+
+def vendor_cancel_booking(booking_id, vendor_email, reason):
+    """A vendor cancels a booking on one of their own events (full refund, reason required)."""
+    email = (vendor_email or "").strip()
+
+    def owns_event(row):
+        return None if (row[6] or "").lower() == email.lower() else "This booking is not for one of your events."
+    return _cancel(booking_id, email, "Vendor", reason, owns_event, by_operator=True)
+
+
+def admin_cancel_booking(booking_id, admin_email, reason):
+    """An admin cancels any booking (full refund, reason required)."""
+    if not is_admin(admin_email):
+        return {"success": False, "message": "Only an admin can do this."}
+    return _cancel(booking_id, admin_email, "Admin", reason, lambda row: None, by_operator=True)
 
 
 def verify_ticket_code(ticket_code, expected_event_title=None):
@@ -649,21 +761,24 @@ def checkout_cart(partner_email):
     if not items:
         return {"success": False, "message": "Shopping list is empty.", "bookings": []}
 
+    class _CartFailed(Exception):
+        pass
+
+    # All items are booked in one transaction: if one fails, none of them is kept
+    # (no half-booked cart, and no cancelled bookings left behind).
     booked_results = []
-    for item in items:
-        res = create_booking(
-            customer_email=partner_email,
-            event_id=item["event_id"],
-            booking_date=item["booking_date"],
-            guests=item["guests"],
-            is_partner=True,
-            client_name=item["client_name"]
-        )
-        if not res["success"]:
-            for b in booked_results:
-                cancel_booking(b["id"], partner_email)
-            return {"success": False, "message": f"Could not book '{item['title']}': {res['message']}", "bookings": []}
-        booked_results.append(res["booking"])
+    try:
+        with _connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            for item in items:
+                res = _book(conn, partner_email, item["event_id"], item["booking_date"], item["guests"],
+                            is_partner=True, client_name=item["client_name"])
+                if not res["success"]:
+                    raise _CartFailed(f"Could not book '{item['title']}': {res['message']} "
+                                      "No booking was made and your payment was not taken.")
+                booked_results.append(res["booking"])
+    except _CartFailed as failed:
+        return {"success": False, "message": str(failed), "bookings": []}
 
     clear_cart(partner_email)
     return {"success": True, "message": f"Successfully confirmed {len(booked_results)} event booking(s)!", "bookings": booked_results}

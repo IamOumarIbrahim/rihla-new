@@ -2,6 +2,7 @@ from datetime import date, timedelta
 import tkinter as tk
 from tkinter import messagebox, ttk
 from .users_welcome import BaseWelcomeScreen
+from .cancellation import page_header, policy_line, cancelled_line, confirm_own_cancel
 from screens.event_screen import show_event_screen
 from database import (
     get_all_events, get_bookings_by_customer, cancel_booking, format_ticket_code,
@@ -212,7 +213,7 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
         for widget in self.scrollable_frame.winfo_children():
             widget.destroy()
 
-        tk.Label(self.scrollable_frame, text=f"My Bookings", font=(t.FONT, 22, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 5))
+        page_header(self.scrollable_frame, "My Bookings", self.build_bookings_content)
         tk.Label(self.scrollable_frame, text="Show your ticket code at the entrance. Each code can be used only once.", font=(t.FONT, 11), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=(0, 10))
 
         bookings = get_bookings_by_customer(self.email)
@@ -246,6 +247,12 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
             tk.Label(card, text=f"TICKET CODE", font=(t.FONT, 8, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=15, pady=(8, 0))
             code_color = t.TEXT if booking["status"] == "Confirmed" else t.TEXT_MUTED
             tk.Label(card, text=format_ticket_code(booking["ticket_code"]), font=("Consolas", 16, "bold"), bg=t.CARD_BG, fg=code_color).pack(anchor="w", padx=15, pady=(0, 5))
+            if booking["status"] == "Cancelled":
+                tk.Label(card, text=cancelled_line(booking, self.email), font=(t.FONT, 9), bg=t.CARD_BG, fg="#c0392b",
+                         wraplength=600, justify="left").pack(anchor="w", padx=15, pady=(0, 4))
+            elif booking["status"] == "Confirmed":
+                tk.Label(card, text=policy_line(booking), font=(t.FONT, 9, "italic"), bg=t.CARD_BG,
+                         fg=t.TEXT_MUTED).pack(anchor="w", padx=15, pady=(0, 4))
 
             btn_row = tk.Frame(card, bg=t.CARD_BG)
             btn_row.pack(anchor="w", padx=15, pady=(5, 5))
@@ -460,7 +467,7 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
         button.config(text=f"Copied!")
 
     def handle_cancel_booking(self, booking):
-        if not messagebox.askyesno("Cancel booking", f"Cancel your booking for {booking['event_title']}?\n\nThe ticket code will stop working."):
+        if not confirm_own_cancel(booking):
             return
         result = cancel_booking(booking["id"], self.email)
         if result["success"]:

@@ -167,6 +167,12 @@ def init_db():
                 status TEXT NOT NULL DEFAULT 'Confirmed',
                 client_name TEXT DEFAULT '',
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                cancelled_at TEXT,
+                cancelled_by TEXT,
+                cancelled_by_role TEXT,
+                cancel_reason TEXT NOT NULL DEFAULT '',
+                refund_percent INTEGER,
+                refund_amount REAL,
                 FOREIGN KEY(event_id) REFERENCES events(id)
             )
         ''')
@@ -271,6 +277,14 @@ def init_db():
         booking_columns = [row[1] for row in conn.execute("PRAGMA table_info(bookings)")]
         if "client_name" not in booking_columns:
             conn.execute("ALTER TABLE bookings ADD COLUMN client_name TEXT DEFAULT ''")
+        # Cancellation audit trail and refund (older databases get the columns here)
+        if "cancelled_at" not in booking_columns:
+            conn.execute("ALTER TABLE bookings ADD COLUMN cancelled_at TEXT")
+            conn.execute("ALTER TABLE bookings ADD COLUMN cancelled_by TEXT")
+            conn.execute("ALTER TABLE bookings ADD COLUMN cancelled_by_role TEXT")
+            conn.execute("ALTER TABLE bookings ADD COLUMN cancel_reason TEXT NOT NULL DEFAULT ''")
+            conn.execute("ALTER TABLE bookings ADD COLUMN refund_percent INTEGER")
+            conn.execute("ALTER TABLE bookings ADD COLUMN refund_amount REAL")
 
         conn.execute('''
             CREATE TABLE IF NOT EXISTS partner_cart (
