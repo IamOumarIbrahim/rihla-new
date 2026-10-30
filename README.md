@@ -72,14 +72,28 @@ The login screen has a quick button for each of these. They are created automati
 `dummy_data.ps1` also adds these accounts, all with the password `demo1234`:
 
 - Customers: layla.hassan@example.com, james.carter@example.com, sofia.rossi@example.com, omar.khalid@example.com
-- Staff: nadia.saleh@example.com, Partner: desert.routes@example.com, Dispatcher: karim.dispatch@example.com
+- Staff: nadia.saleh@example.com (Al Qudra Desert Camp), yousef.marina@example.com (Dubai Marina Yacht Club)
+- Partner: desert.routes@example.com, Dispatcher: karim.dispatch@example.com
 
 Other useful values:
 
-- Test ticket code for the staff scanner: `1234567890123456` (event: New year dinner)
+- Test ticket code for the staff scanner: `1234567890123456` (event: New year dinner at Burj Khalifa,
+  so only staff of Burj Khalifa, such as staff@email.com, can check it in)
 - Payment: the checkout form is filled in with demo Visa, Mastercard or bank transfer details.
   Leave them as they are; changing them makes the demo payment fail on purpose.
 - Sign-up: every account type except Customer needs a 16-digit SSN (any 16 digits that are not all the same). Admin accounts cannot be registered.
+- Staff sign-up also asks for the venue they work at (one of the existing venues) and the email of
+  that venue's manager. No manager account is needed; the email is only stored and shown to the admin.
+
+## Staff and venues
+
+- Every staff account works at one venue. The *Venue Operations* page checks tickets in and shows
+  today's schedule for that venue only. The server enforces this: a ticket for an event at another
+  venue is refused, and the schedule never includes other venues.
+- Staff change their venue and manager email in *Settings*; check-in and the schedule follow at once.
+- The admin *User Accounts* table shows each staff member's Venue and Manager Email.
+- Staff accounts made before venues were assigned get one automatically when the server starts
+  (the demo staff account gets Burj Khalifa, others the first venue) with a placeholder manager email.
 
 ## Cancellations and refunds
 
@@ -92,7 +106,7 @@ Other useful values:
 - Every cancellation records when, who, why and the refund; the booking card, the vendor table and
   the admin *Bookings* page show it. Cancelling frees the seats at once.
 - Payments are a demo, so a refund is recorded, not sent anywhere.
-- Pages that show other people's changes (bookings, staff schedule, dispatch) have a **Refresh** button.
+- Pages that show other people's changes (bookings, venue operations, dispatch) have a **Refresh** button.
 
 ## Demo script
 
@@ -112,8 +126,11 @@ A suggested order for the final demo, about 10 minutes. Run `dummy_data.ps1` rig
      Select a confirmed booking and cancel it with a reason (full refund).
    - *Manage Venues*: add a venue with a Google Maps link, or edit the link.
 3. **Staff** (staff@email.com)
-   - *Ticket Scanner*: scan the ticket code from step 1 (or `1234567890123456`). It admits a ticket once.
-   - *Support Tickets*: the customer message from step 1. *Schedule*: today's events with venue map links.
+   - *Venue Operations*: the staff member's venue (Burj Khalifa) and manager, ticket check-in and
+     today's schedule for that venue. Check in `1234567890123456`; it admits a ticket once.
+   - Log in as nadia.saleh@example.com (Al Qudra Desert Camp) and try the same code: it is refused,
+     because the ticket is for another venue. Her schedule shows only Al Qudra events.
+   - *Support Tickets*: the customer message from step 1.
 4. **Partner** (partner@email.com)
    - *Explore Tours*: add several events for client groups to the cart, then pay for all of them at once.
    - *Partner Bookings*: the group bookings.
@@ -121,7 +138,7 @@ A suggested order for the final demo, about 10 minutes. Run `dummy_data.ps1` rig
    - *Register Vehicles*, *Fleet Maintenance* (filterable table), *Event Dispatch*: assign vehicles to an event.
      The event's capacity becomes the seats of its vehicles.
 6. **Admin** (admin@email.com)
-   - *User Accounts*: every account with sign-up date and age; ban a demo customer, then try to log in as them.
+   - *User Accounts*: every account with sign-up date and age (staff also show Venue and Manager Email); ban a demo customer, then try to log in as them.
    - *Reports*: reports sent with the *Report* button from other roles; resolve one or ban the offender.
    - *Bookings*: every booking; cancel one with a reason and see who cancelled what and the refund.
 

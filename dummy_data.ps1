@@ -20,6 +20,7 @@
     server\event_images\<event id>.jpg (needs Pillow: python -m pip install pillow).
 
     Extra demo customers, and the extra staff, partner and dispatcher accounts, use the password  demo1234
+    (seeded staff each work at a venue and have a manager email; the demo staff account works at Burj Khalifa)
     (non-customer accounts are seeded with a valid 16-digit SSN, as sign-up now requires)
 
 .PARAMETER Clear
@@ -84,6 +85,8 @@ def maps(query):
 
 
 VENUES = {
+    # Burj Khalifa is made by init_db (the demo staff account works there), so it is found, not seeded.
+    "burj": ("Burj Khalifa", "Dubai Downtown, Dubai", maps("Burj Khalifa")),
     "marina": ("Dubai Marina Yacht Club", "Dubai Marina, Dubai", maps("Dubai Marina Yacht Club")),
     "qudra": ("Al Qudra Desert Camp", "Al Qudra Road, Dubai", maps("Al Qudra Lakes Dubai")),
     "downtown": ("Downtown Rooftop Terrace", "Mohammed Bin Rashid Blvd, Dubai", maps("Downtown Dubai")),
@@ -105,6 +108,9 @@ EVENTS = {
     "chef": ("Chef's Table Arabian Feast", "Fine Dining", 275, "downtown", True, "Thursday, Friday", "19:30", 16, "dinner.jpg",
              "A seven-course tasting menu of modern Emirati and Levantine dishes, served at a shared chef's table with "
              "views of the Dubai Fountain."),
+    "sky": ("At the Top Sky Lounge Evening", "Fine Dining", 390, "burj", True, EVERY_DAY, "19:00", 30, "dinner.jpg",
+            "Sunset drinks and a light dinner on level 152 of the Burj Khalifa, with a guided look at the city "
+            "lights from the highest lounge in the world."),
     "rooftop": ("Arabian Nights Rooftop Dinner", "Fine Dining", 420, "downtown", False, 14, "20:00", 40, "dinner.jpg",
                 "A one-night-only rooftop dinner with oud and qanun musicians, a mezze spread and a mixed grill, under "
                 "lanterns overlooking Downtown Dubai."),
@@ -129,16 +135,22 @@ CUSTOMERS = [
 ]
 
 # Non-customer accounts must have a 16-digit SSN (only its hash and last 4 digits are stored).
-# email, role, SSN, signed up N days ago
+# Staff also work at one venue (venue key) and name its manager; None for other roles.
+# email, role, SSN, signed up N days ago, venue key, manager email
 TEAM_MEMBERS = [
-    ("nadia.saleh@example.com", "Staff", "5021884736190427", 200),
-    ("desert.routes@example.com", "Partner", "6130597248816352", 90),
-    ("karim.dispatch@example.com", "Dispatcher", "7249013658427781", 60),
+    ("nadia.saleh@example.com", "Staff", "5021884736190427", 200, "qudra", "manager.alqudra@email.com"),
+    ("yousef.marina@example.com", "Staff", "5132995847201538", 150, "marina", "manager.marinayachtclub@email.com"),
+    ("desert.routes@example.com", "Partner", "6130597248816352", 90, None, None),
+    ("karim.dispatch@example.com", "Dispatcher", "7249013658427781", 60, None, None),
 ]
 
 # email, event key, when ("+N" upcoming / "-N" past / "today"), guests, ticket status, client name, rating, comment
 BOOKINGS = [
     (CUSTOMER, "cruise", "+3", 2, "Valid", "", None, ""),
+    (CUSTOMER, "sky", "today", 2, "Valid", "", None, ""),
+    ("sofia.rossi@example.com", "sky", "today", 3, "Used", "", None, ""),
+    ("layla.hassan@example.com", "sky", "+4", 2, "Valid", "", None, ""),
+    ("james.carter@example.com", "sky", "-5", 2, "Used", "", 5.0, "Unbelievable view, worth booking the sunset slot."),
     (CUSTOMER, "camp", "+5", 4, "Valid", "", None, ""),
     (CUSTOMER, "rooftop", None, 2, "Valid", "", None, ""),
     (CUSTOMER, "dunes", "+8", 3, "Cancelled", "", None, ""),
@@ -240,9 +252,11 @@ def clear_seed():
                      f"OR event_id IN {in_list(event_ids)} OR vehicle_id IN {in_list(vehicle_ids)}")
         conn.execute(f"DELETE FROM vehicles WHERE id IN {in_list(vehicle_ids)}")
         conn.execute(f"DELETE FROM events WHERE id IN {in_list(event_ids)}")
-        # Keep a seeded venue if someone has since put their own event there.
+        # Keep a seeded venue if someone has since put their own event there,
+        # or while staff of your own (e.g. the demo staff after a Settings change) work there.
         conn.execute(f"DELETE FROM venues WHERE id IN {in_list(seeded_ids(conn, 'venues'))} "
-                     f"AND id NOT IN (SELECT venue_id FROM events WHERE venue_id IS NOT NULL)")
+                     f"AND id NOT IN (SELECT venue_id FROM events WHERE venue_id IS NOT NULL) "
+                     f"AND id NOT IN (SELECT venue_id FROM users WHERE venue_id IS NOT NULL AND rowid NOT IN {in_list(user_rowids)})")
         conn.execute(f"DELETE FROM vendor_categories WHERE id IN {in_list(seeded_ids(conn, 'vendor_categories'))}")
         conn.execute(f"DELETE FROM reports WHERE id IN {in_list(seeded_ids(conn, 'reports'))} "
                      f"OR lower(reporter_email) IN {emails_sql}", seeded_emails)
@@ -304,18 +318,6 @@ def seed():
             conn.execute("INSERT INTO demo_seed (tbl, row_id) VALUES (?, ?)", (tbl, row_id))
             return row_id
 
-        for email, role, ssn, signed_up_days_ago in TEAM_MEMBERS:
-            if core.ssn_error(role, ssn):
-                raise ValueError(f"Seed SSN for {email} is not valid: {core.ssn_error(role, ssn)}")
-            if conn.execute("SELECT 1 FROM users WHERE lower(email) = lower(?)", (email,)).fetchone():
-                continue
-            signed_up = f"{(TODAY - timedelta(days=signed_up_days_ago)).isoformat()} 11:20:00"
-            cur = conn.execute(
-                "INSERT INTO users (email, password, role, phone, created_at, ssn_hash, ssn_last4) VALUES (?, ?, ?, NULL, ?, ?, ?)",
-                (email, core.hash_password(DEMO_PASSWORD), role, signed_up, core.hash_password(ssn), ssn[-4:]),
-            )
-            track("users", cur.lastrowid)
-
         for email, currency, signed_up_days_ago in CUSTOMERS:
             if conn.execute("SELECT 1 FROM users WHERE lower(email) = lower(?)", (email,)).fetchone():
                 continue  # a real account with that email already exists; leave it alone
@@ -333,6 +335,23 @@ def seed():
             cur = conn.execute("INSERT INTO venues (name, address, vendor_email, maps_url) VALUES (?, ?, ?, ?)",
                                (name, address, VENDOR, maps_url))
             venue_ids[key] = track("venues", cur.lastrowid)
+
+        for email, role, ssn, signed_up_days_ago, venue_key, manager_email in TEAM_MEMBERS:
+            if core.ssn_error(role, ssn):
+                raise ValueError(f"Seed SSN for {email} is not valid: {core.ssn_error(role, ssn)}")
+            venue_id = venue_ids[venue_key] if venue_key else None
+            if role == core.STAFF_ROLE and core.staff_venue_error(venue_id, manager_email, conn):
+                raise ValueError(f"Seed venue for {email} is not valid: {core.staff_venue_error(venue_id, manager_email, conn)}")
+            if conn.execute("SELECT 1 FROM users WHERE lower(email) = lower(?)", (email,)).fetchone():
+                continue
+            signed_up = f"{(TODAY - timedelta(days=signed_up_days_ago)).isoformat()} 11:20:00"
+            cur = conn.execute(
+                "INSERT INTO users (email, password, role, phone, created_at, ssn_hash, ssn_last4, venue_id, manager_email) "
+                "VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?)",
+                (email, core.hash_password(DEMO_PASSWORD), role, signed_up, core.hash_password(ssn), ssn[-4:],
+                 venue_id, manager_email),
+            )
+            track("users", cur.lastrowid)
 
         for name in CATEGORIES:
             if conn.execute("SELECT 1 FROM vendor_categories WHERE lower(vendor_email) = lower(?) AND lower(name) = lower(?)",
@@ -438,7 +457,8 @@ def seed():
     print(f"Seeded {len(event_ids)} events, {len(BOOKINGS)} bookings, {sum(1 for b in BOOKINGS if b[6] is not None)} reviews, "
           f"{len(SUPPORT_TICKETS)} support tickets, {len(REPORTS)} reports, {len(PARTNER_CART)} partner cart items.")
     print(f"Extra demo customers (password {DEMO_PASSWORD}): " + ", ".join(c[0] for c in CUSTOMERS))
-    print(f"Extra team accounts (password {DEMO_PASSWORD}): " + ", ".join(f"{m[0]} ({m[1]})" for m in TEAM_MEMBERS))
+    print(f"Extra team accounts (password {DEMO_PASSWORD}): " + ", ".join(
+        f"{m[0]} ({m[1]}{', ' + VENUES[m[4]][0] if m[4] else ''})" for m in TEAM_MEMBERS))
 
 
 clear_seed()
