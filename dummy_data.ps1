@@ -63,6 +63,8 @@ import database_core as core
 import database_events as ev
 
 core.init_db()  # creates the database / brings the schema up to date first
+with core._connect() as _conn:
+    ev._ensure_reviews_table(_conn)  # reviews is normally created on first use; a fresh database has none yet
 
 VENDOR = "vendor@email.com"
 STAFF = "staff@email.com"
