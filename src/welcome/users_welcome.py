@@ -5,7 +5,10 @@ from tkinter import messagebox, ttk
 from ui import clear_window
 import navigate
 from config import MIN_PASSWORD_LENGTH, ADMIN_ROLE
-from database import check_login, update_password, get_preferred_currency, set_preferred_currency
+from database import (check_login, update_password, get_preferred_currency, set_preferred_currency,
+                      get_all_venues, get_staff_venue, set_staff_venue)
+
+STAFF_ROLE = "Staff"
 from pricing import CURRENCIES, normalize_currency
 from .report_view import ReportView
 import theme as t
@@ -167,6 +170,10 @@ class BaseWelcomeScreen:
                   relief="flat", cursor="hand2", command=save_currency).pack(side=tk.LEFT, padx=(10, 0), ipadx=6)
         currency_status.pack(anchor="w", padx=30, pady=(0, 10))
 
+        if self.role_name == STAFF_ROLE:
+            modal.geometry("380x640")
+            self._add_staff_venue_settings(modal)
+
         tk.Label(modal, text="Change password", font=(t.FONT, 11, "bold")).pack(anchor="w", padx=30, pady=(5, 5))
         entries = {}
         for key, label in (("old", "Current password"), ("new", "New password"), ("confirm", "Confirm new password")):
@@ -192,6 +199,35 @@ class BaseWelcomeScreen:
 
         tk.Button(modal, text="Save new password", bg=t.PRIMARY, fg="white", font=(t.FONT, 10, "bold"),
                   relief="flat", cursor="hand2", command=save).pack(pady=15, ipadx=10, ipady=4)
+
+    def _add_staff_venue_settings(self, modal):
+        """Staff pick the venue they work at and its manager's email; the server checks both."""
+        current = get_staff_venue(self.email) or {}
+        venues = get_all_venues()
+        venue_ids = {f"{v['name']}, {v['address']}": v["id"] for v in venues}
+        current_label = next((label for label, vid in venue_ids.items() if vid == current.get("id")), "Choose your venue")
+
+        tk.Label(modal, text="Venue", font=(t.FONT, 10, "bold")).pack(anchor="w", padx=30)
+        venue_var = tk.StringVar(value=current_label)
+        ttk.Combobox(modal, textvariable=venue_var, values=list(venue_ids), state="readonly", width=40).pack(anchor="w", padx=30)
+        tk.Label(modal, text="Manager email", font=(t.FONT, 10, "bold")).pack(anchor="w", padx=30, pady=(6, 0))
+        manager_entry = tk.Entry(modal, width=42)
+        manager_entry.insert(0, current.get("manager_email", ""))
+        manager_entry.pack(anchor="w", padx=30)
+        venue_status = tk.Label(modal, text="", font=(t.FONT, 9), wraplength=320, justify="left")
+
+        def save_venue():
+            result = set_staff_venue(self.email, venue_ids.get(venue_var.get()), manager_entry.get().strip())
+            venue_status.config(text=result.get("message", ""), fg="#27ae60" if result.get("success") else "#c0392b")
+            if result.get("success"):
+                self.on_staff_venue_changed()
+
+        tk.Button(modal, text="Save venue", bg=t.PRIMARY, fg="white", font=(t.FONT, 9, "bold"), relief="flat",
+                  cursor="hand2", command=save_venue).pack(anchor="w", padx=30, pady=(6, 2), ipadx=6)
+        venue_status.pack(anchor="w", padx=30, pady=(0, 10))
+
+    def on_staff_venue_changed(self):
+        """Staff screens redraw so check-in and the schedule follow the new venue."""
 
     def _on_mouse_wheel(self, event):
         if not self.canvas.winfo_exists():

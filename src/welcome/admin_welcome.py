@@ -17,9 +17,12 @@ USER_COLUMNS = [
     ("select", CHECKED, 50, "center", False),
     ("email", "Email", 260, "w", False),
     ("role", "Account Type", 140, "center", True),
-    ("created", "Signed Up", 170, "center", False),
-    ("age", "Account Age", 150, "center", False),
-    ("status", "Status", 110, "center", True),
+    ("created", "Signed Up", 150, "center", False),
+    ("age", "Account Age", 110, "center", False),
+    ("status", "Status", 100, "center", True),
+    # Staff only: the venue they work at and its manager (blank for everyone else)
+    ("venue", "Venue", 180, "w", True),
+    ("manager", "Manager Email", 220, "w", False),
 ]
 
 
@@ -88,6 +91,10 @@ class AdminWelcomeScreen(BaseWelcomeScreen):
             return account_age(user["created_at"])
         if col_key == "status":
             return "Banned" if user["banned"] else "Active"
+        if col_key == "venue":
+            return user.get("venue_name", "")
+        if col_key == "manager":
+            return user.get("manager_email", "")
         return ""
 
     def _passes_filters(self, user):
@@ -184,7 +191,10 @@ class AdminWelcomeScreen(BaseWelcomeScreen):
         tree.bind("<Button-1>", on_click)
 
         scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=tree.yview)
-        tree.configure(yscrollcommand=scrollbar.set)
+        # The staff Venue and Manager Email columns make the table wider than small windows.
+        x_scrollbar = ttk.Scrollbar(frame, orient=tk.HORIZONTAL, command=tree.xview)
+        tree.configure(yscrollcommand=scrollbar.set, xscrollcommand=x_scrollbar.set)
+        x_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
         tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 

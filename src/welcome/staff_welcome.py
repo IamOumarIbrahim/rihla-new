@@ -9,20 +9,21 @@ from .dispatch_view import ROW_EVEN, ROW_ODD
 from .cancellation import page_header
 from datetime import date
 from database import (
-    get_all_venues, get_events_by_venue, verify_ticket_code,
+    get_staff_venue, get_events_by_venue, verify_ticket_code,
     get_open_support_tickets, resolve_support_ticket, get_events_today
 )
 
 SCHEDULE_HEADING_BG = "#e5e8e8"
-# Columns of today's schedule table: (heading, anchor, grid weight)
+# Columns of today's schedule table: (heading, anchor, grid weight). Every row is at the staff member's venue.
 SCHEDULE_COLUMNS = [
     ("Event", "w", 3),
     ("Time", "center", 1),
-    ("Venue", "w", 3),
     ("Bookings", "center", 1),
     ("Expected guests", "center", 1),
     ("Checked in", "center", 1),
 ]
+# The demo ticket from server/database_core.py is for the New year dinner at Burj Khalifa.
+DEMO_TICKET_HINT = "Demo ticket (Burj Khalifa staff): 1234 5678 9012 3456"
 
 
 class StaffWelcomeScreen(BaseWelcomeScreen):
@@ -30,79 +31,68 @@ class StaffWelcomeScreen(BaseWelcomeScreen):
         super().__init__(root, email, "Staff")
         self.root = root
 
-        # Staff-specific nav items
-        self.add_nav_button("Ticket Scanner", self.build_scanner_content, icon="scan")
+        # Staff-specific nav items: check-in and today's schedule share one page for the staff member's venue
+        self.add_nav_button("Venue Operations", self.build_operations_content, icon="scan")
         self.add_nav_button("Support Tickets", self.build_support_content, icon="chat")
-        self.add_nav_button("Schedule", self.build_schedule_content, icon="calendar")
 
-        # Render Ticket Scanner content by default
-        self.build_scanner_content()
+        # Render Venue Operations content by default
+        self.build_operations_content()
 
-    def build_scanner_content(self):
+    def on_staff_venue_changed(self):
+        self.build_operations_content()
+
+    def build_operations_content(self):
         for widget in self.scrollable_frame.winfo_children():
             widget.destroy()
+        page_header(self.scrollable_frame, "Venue Operations", self.build_operations_content, pady=(20, 5))
 
-        tk.Label(self.scrollable_frame, text=f"Venue Ticket Scanner", font=(t.FONT, 22, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 5))
+        # The server decides which venue this account works at; staff change it in Settings.
+        venue = get_staff_venue(self.email)
+        if not venue:
+            tk.Label(self.scrollable_frame, text="Your account is not assigned to a venue yet. Choose your venue in Settings.",
+                     font=(t.FONT, 11, "italic"), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=10)
+            return
 
+        venue_row = tk.Frame(self.scrollable_frame, bg=t.PAGE_BG)
+        venue_row.pack(fill=tk.X, padx=30, pady=(0, 5))
+        venue_label(venue_row, f"{venue['name']}, {venue['address']}", venue.get("maps_url"),
+                    font=(t.FONT, 12, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(side=tk.LEFT)
+        tk.Label(venue_row, text=f"Manager: {venue['manager_email'] or 'not set'}", font=(t.FONT, 10),
+                 bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(side=tk.RIGHT)
+
+        self.build_checkin_card(venue)
+
+        tk.Label(self.scrollable_frame, text="Today's Schedule", font=(t.FONT, 16, "bold"), bg=t.PAGE_BG,
+                 fg=t.TEXT).pack(anchor="w", padx=30, pady=(15, 2))
+        self.schedule_holder = tk.Frame(self.scrollable_frame, bg=t.PAGE_BG)
+        self.schedule_holder.pack(fill=tk.X)
+        self.render_today_schedule()
+
+    def build_checkin_card(self, venue):
         # Card container for scanner interface
         card = tk.Frame(self.scrollable_frame, bg=t.CARD_BG, bd=1, relief="solid", highlightbackground=t.BORDER)
         card.pack(fill=tk.X, padx=30, pady=10, ipady=20, ipadx=20)
 
-        # 1. Venue Selection
-        tk.Label(card, text=f"SELECT VENUE", font=(t.FONT, 10, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=20, pady=(10, 5))
+        tk.Label(card, text="Ticket Check-in", font=(t.FONT, 14, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(anchor="w", padx=20, pady=(10, 0))
 
-        venues = get_all_venues()
-        venue_dict = {f"{v['name']}, {v['address']}": v['id'] for v in venues} if venues else {}
-        venue_options = list(venue_dict.keys()) if venue_dict else ["No venues available"]
-
-        selected_venue_str = tk.StringVar(card)
-        selected_venue_str.set(venue_options[0] if venue_options else "")
-
-        # The venue dropdown sits right under its SELECT VENUE heading
-        venue_menu = tk.OptionMenu(card, selected_venue_str, *venue_options)
-        venue_menu.config(font=(t.FONT, 11), bg=t.FIELD_BG, relief="solid", bd=1, highlightthickness=0, anchor="w")
-        venue_menu.pack(fill=tk.X, padx=20, pady=(0, 10), ipady=5)
-
-        # 2. Event Selection Container (Dynamic)
+        # 1. Event Selection: only the events at this staff member's venue
         tk.Label(card, text=f"SELECT EVENT", font=(t.FONT, 10, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=20, pady=(10, 5))
-        
+
         event_var = tk.StringVar(card)
         event_titles = {}  # menu text -> event title, used to check the ticket belongs to the chosen event
-        event_menu_holder = tk.Frame(card, bg=t.CARD_BG)
-        event_menu_holder.pack(fill=tk.X, padx=20, pady=(0, 10))
-
-        def update_event_options(*args):
-            for widget in event_menu_holder.winfo_children():
-                widget.destroy()
-            
-            event_var.set("")
-            event_titles.clear()
-            v_str = selected_venue_str.get()
-            if not v_str or v_str not in venue_dict:
-                tk.Label(event_menu_holder, text="Select a valid venue first", font=(t.FONT, 10, "italic"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w")
-                return
-
-            venue_id = venue_dict[v_str]
-            events = get_events_by_venue(venue_id)
-            
-            if not events:
-                tk.Label(event_menu_holder, text="No events found for this venue", font=(t.FONT, 10, "italic"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w")
-                return
-
+        events = get_events_by_venue(venue["id"])
+        if events:
             event_options = [f"{e['title']}, {e['event_datetime']}" for e in events]
             event_var.set(event_options[0])
             event_titles.update({f"{e['title']}, {e['event_datetime']}": e["title"] for e in events})
+            event_menu = tk.OptionMenu(card, event_var, *event_options)
+            event_menu.config(font=(t.FONT, 11), bg=t.FIELD_BG, relief="solid", bd=1, highlightthickness=0, anchor="w")
+            event_menu.pack(fill=tk.X, padx=20, pady=(0, 10), ipady=5)
+        else:
+            tk.Label(card, text="No events found for your venue", font=(t.FONT, 10, "italic"), bg=t.CARD_BG,
+                     fg=t.TEXT_MUTED).pack(anchor="w", padx=20, pady=(0, 10))
 
-            event_menu = tk.OptionMenu(event_menu_holder, event_var, *event_options)
-            event_menu.config(font=(t.FONT, 11), bg=t.FIELD_BG, relief="solid", bd=1, highlightthickness=0)
-            event_menu.pack(fill=tk.X, ipady=5)
-
-        selected_venue_str.trace_add("write", update_event_options)
-
-        # Initial call to populate events for the first venue
-        update_event_options()
-
-        # 3. Ticket Input Field
+        # 2. Ticket Input Field
         tk.Label(card, text=f"16-DIGIT ENTRY TICKET CODE", font=(t.FONT, 10, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=20, pady=(10, 5))
 
         # 4 groups of 4 boxes: digits only, the cursor moves on after every digit
@@ -125,13 +115,15 @@ class StaffWelcomeScreen(BaseWelcomeScreen):
 
             expected_title = event_titles.get(event_var.get())
             if not expected_title:
-                result_label.config(text=f"{ic.emoji('alert')} Error: Select a venue and an event first.", fg="#e74c3c")
+                result_label.config(text=f"{ic.emoji('alert')} Error: Select an event first.", fg="#e74c3c")
                 return
 
-            res = verify_ticket_code(code, expected_title)
+            # The server refuses tickets for events at any other venue.
+            res = verify_ticket_code(code, expected_title, staff_email=self.email)
             if res["success"]:
                 result_label.config(text=f"{ic.emoji('check')} OK: {res['message']}", fg="#27ae60")
                 code_boxes.clear()
+                self.render_today_schedule()  # the Checked in column moves on
             else:
                 result_label.config(text=f"{ic.emoji('cross')} Failed: {res['message']}", fg="#e74c3c")
                 code_boxes.set_error(True)
@@ -143,7 +135,7 @@ class StaffWelcomeScreen(BaseWelcomeScreen):
         scan_btn.bind("<Return>", process_scan)
         t.add_hover(scan_btn, t.PRIMARY, t.PRIMARY_HOVER)
 
-        tip_text = tk.Label(card, text="Test Ticket Code: 1234567890123456", font=(t.FONT, 9, "italic"), bg=t.CARD_BG, fg=t.TEXT_MUTED)
+        tip_text = tk.Label(card, text=DEMO_TICKET_HINT, font=(t.FONT, 9, "italic"), bg=t.CARD_BG, fg=t.TEXT_MUTED)
         tip_text.pack(anchor="w", padx=20, pady=(10, 0))
 
     def build_support_content(self):
@@ -151,15 +143,6 @@ class StaffWelcomeScreen(BaseWelcomeScreen):
             widget.destroy()
         tk.Label(self.scrollable_frame, text=f"Support Tickets", font=(t.FONT, 22, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 10))
         self.render_support_list()
-
-
-
-    def build_schedule_content(self):
-        for widget in self.scrollable_frame.winfo_children():
-            widget.destroy()
-        page_header(self.scrollable_frame, "Staff Schedule", self.build_schedule_content, pady=(20, 10))
-        self.render_today_schedule()
-
 
     def render_support_list(self):
         tickets = get_open_support_tickets()
@@ -183,17 +166,19 @@ class StaffWelcomeScreen(BaseWelcomeScreen):
         self.build_support_content()
 
     def render_today_schedule(self):
-        tk.Label(self.scrollable_frame, text=f"" + date.today().strftime("%A, %d %B %Y"), font=(t.FONT, 11), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=(0, 10))
-        events = get_events_today()
+        holder = self.schedule_holder
+        for widget in holder.winfo_children():
+            widget.destroy()
+        tk.Label(holder, text=date.today().strftime("%A, %d %B %Y"), font=(t.FONT, 11), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=(0, 10))
+        events = get_events_today(self.email)  # the server only returns this staff member's venue
         if not events:
-            tk.Label(self.scrollable_frame, text="No events are running today.", font=(t.FONT, 11, "italic"), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30)
+            tk.Label(holder, text="No events are running at your venue today.", font=(t.FONT, 11, "italic"), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30)
             return
         # Earliest first; events without a time go to the bottom
         events = sorted(events, key=lambda ev: (not ev['time'], ev['time'] or "", ev['title']))
 
-        # A grid of labels (not a Treeview) so the venue cell can stay a clickable Maps link.
-        # Colours and fonts match the dispatch tables.
-        table = tk.Frame(self.scrollable_frame, bg=t.CARD_BG, bd=1, relief="solid", highlightbackground=t.BORDER)
+        # A grid of labels; colours and fonts match the dispatch tables.
+        table = tk.Frame(holder, bg=t.CARD_BG, bd=1, relief="solid", highlightbackground=t.BORDER)
         table.pack(fill=tk.X, padx=30, pady=(0, 10))
 
         for col, (heading, anchor, weight) in enumerate(SCHEDULE_COLUMNS):
@@ -203,20 +188,11 @@ class StaffWelcomeScreen(BaseWelcomeScreen):
 
         for i, ev in enumerate(events, start=1):
             bg = ROW_ODD if i % 2 == 0 else ROW_EVEN
-            cells = [
-                tk.Label(table, text=ev['title'], wraplength=260, justify="left"),
-                tk.Label(table, text=ev['time'] or "TBA"),
-                venue_label(table, ev['venue_name'] or 'Venue to be announced', ev.get('maps_url'), font=(t.FONT, 10), fg=t.TEXT),
-                tk.Label(table, text=ev['bookings']),
-                tk.Label(table, text=ev['guests']),
-                tk.Label(table, text=ev['checked_in']),
-            ]
-            for col, cell in enumerate(cells):
-                anchor = SCHEDULE_COLUMNS[col][1]
-                cell.config(bg=bg, anchor=anchor, padx=10, pady=5)
-                if col != 2:  # the venue keeps its own link font and colour
-                    cell.config(font=(t.FONT, 10), fg=t.TEXT)
-                cell.grid(row=i, column=col, sticky="nsew")
+            values = [ev['title'], ev['time'] or "TBA", ev['bookings'], ev['guests'], ev['checked_in']]
+            for col, value in enumerate(values):
+                tk.Label(table, text=value, wraplength=260 if col == 0 else 0, justify="left", bg=bg,
+                         anchor=SCHEDULE_COLUMNS[col][1], padx=10, pady=5, font=(t.FONT, 10), fg=t.TEXT
+                         ).grid(row=i, column=col, sticky="nsew")
 
 
 def show_staff_welcome(root, email):

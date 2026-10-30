@@ -8,7 +8,7 @@ import navigate
 import theme as t
 from brand_logo import draw_logo
 from config import SIGNUP_ROLES, MIN_PASSWORD_LENGTH
-from database import register_user, email_exists, phone_exists
+from database import register_user, email_exists, phone_exists, get_all_venues
 from digit_boxes import DigitBoxes
 
 SSN_LENGTH = 16
@@ -116,12 +116,34 @@ def show_create_account_screen(root):
     ssn_boxes = DigitBoxes(ssn_section, groups=4, group_size=4, font_size=12, box_width=1)
     ssn_boxes.pack(anchor="w")
 
+    # Staff work at one existing venue and name that venue's manager (no manager account is needed).
+    staff_section = tk.Frame(form, bg=t.CARD_BG)
+    venue_row = tk.Frame(staff_section, bg=t.CARD_BG)
+    venue_row.pack(fill=tk.X, pady=(8, 0))
+    tk.Label(venue_row, text="VENUE", font=(t.FONT, 9, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT)
+    try:
+        venues = get_all_venues()
+    except ConnectionError:
+        venues = []
+    venue_ids = {f"{v['name']}, {v['address']}": v["id"] for v in venues}
+    venue_var = tk.StringVar(value="Choose your venue")
+    venue_menu = tk.OptionMenu(venue_row, venue_var, *(venue_ids or ["No venues available"]))
+    venue_menu.config(font=(t.FONT, 10), bg=t.FIELD_BG, fg=t.TEXT, activebackground=t.FIELD_BG, relief="flat", bd=0,
+                      highlightthickness=1, highlightbackground=t.BORDER, anchor="w", cursor="hand2", width=30)
+    venue_menu["menu"].config(font=(t.FONT, 10))
+    venue_menu.pack(side=tk.RIGHT)
+    _, manager_entry = _make_field(staff_section, "VENUE MANAGER EMAIL")
+
     def on_role_change(*_):
         if role_var.get() == "Customer":
             ssn_boxes.set("")
             ssn_section.pack_forget()
         else:
             ssn_section.pack(fill=tk.X, after=role_row)
+        if role_var.get() == "Staff":
+            staff_section.pack(fill=tk.X, after=ssn_section)
+        else:
+            staff_section.pack_forget()
 
     role_var.trace_add("write", on_role_change)
 
@@ -288,10 +310,22 @@ def show_create_account_screen(root):
                 messagebox.showerror("Error", "Please enter your real SSN.")
                 return
 
-        if register_user(email, pwd, role, phone=phone, ssn=ssn):
+        venue_id = manager_email = None
+        if role == "Staff":
+            venue_id = venue_ids.get(venue_var.get())
+            manager_email = manager_entry.get().strip()
+            if venue_id is None:
+                messagebox.showerror("Error", "Staff accounts must choose the venue they work at.")
+                return
+            if not _EMAIL_RE.match(manager_email):
+                messagebox.showerror("Error", "Please enter a valid email address for your venue manager.")
+                return
+
+        ok, message = register_user(email, pwd, role, phone=phone, ssn=ssn, venue_id=venue_id, manager_email=manager_email)
+        if ok:
             navigate.show_welcome(root, email)
         else:
-            messagebox.showerror("Error", "Registration failed. An account with this email already exists.")
+            messagebox.showerror("Error", message or "Registration failed. An account with this email already exists.")
 
     reg_btn = tk.Button(form, text="Create Account", font=(t.FONT, 11, "bold"), bg=t.PRIMARY, fg="white", bd=0, relief="flat", command=handle_register)
     reg_btn.pack(fill=tk.X, pady=(15, 0), ipady=8)
