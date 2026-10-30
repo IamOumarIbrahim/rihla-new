@@ -43,6 +43,7 @@ class StaffWelcomeScreen(BaseWelcomeScreen):
         tk.Label(card, text="SELECT EVENT", font=(t.FONT, 10, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=20, pady=(10, 5))
         
         event_var = tk.StringVar(card)
+        event_titles = {}  # menu text -> event title, used to check the ticket belongs to the chosen event
         event_menu_holder = tk.Frame(card, bg=t.CARD_BG)
         event_menu_holder.pack(fill=tk.X, padx=20, pady=(0, 10))
 
@@ -50,6 +51,8 @@ class StaffWelcomeScreen(BaseWelcomeScreen):
             for widget in event_menu_holder.winfo_children():
                 widget.destroy()
             
+            event_var.set("")
+            event_titles.clear()
             v_str = selected_venue_str.get()
             if not v_str or v_str not in venue_dict:
                 tk.Label(event_menu_holder, text="Select a valid venue first", font=(t.FONT, 10, "italic"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w")
@@ -64,12 +67,13 @@ class StaffWelcomeScreen(BaseWelcomeScreen):
 
             event_options = [f"{e['title']}, {e['event_datetime']}" for e in events]
             event_var.set(event_options[0])
+            event_titles.update({f"{e['title']}, {e['event_datetime']}": e["title"] for e in events})
 
             event_menu = tk.OptionMenu(event_menu_holder, event_var, *event_options)
             event_menu.config(font=(t.FONT, 11), bg=t.FIELD_BG, relief="solid", bd=1, highlightthickness=0)
             event_menu.pack(fill=tk.X, ipady=5)
 
-        selected_venue_str.trace("w", update_event_options)
+        selected_venue_str.trace_add("write", update_event_options)
 
         venue_menu = tk.OptionMenu(card, selected_venue_str, *venue_options)
         venue_menu.config(font=(t.FONT, 11), bg=t.FIELD_BG, relief="solid", bd=1, highlightthickness=0)
@@ -94,7 +98,12 @@ class StaffWelcomeScreen(BaseWelcomeScreen):
                 result_label.config(text="❌ Error: Ticket code must be exactly 16 digits.", fg="#e74c3c")
                 return
 
-            res = verify_ticket_code(code)
+            expected_title = event_titles.get(event_var.get())
+            if not expected_title:
+                result_label.config(text="\u274c Error: Select a venue and an event first.", fg="#e74c3c")
+                return
+
+            res = verify_ticket_code(code, expected_title)
             if res["success"]:
                 result_label.config(text=f"✔ {res['message']}", fg="#27ae60")
                 code_entry.delete(0, tk.END)
@@ -116,11 +125,7 @@ class StaffWelcomeScreen(BaseWelcomeScreen):
         tk.Label(self.scrollable_frame, text="Support Tickets", font=(t.FONT, 22, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 10))
         tk.Label(self.scrollable_frame, text="No open support tickets at the moment.", font=(t.FONT, 11), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30)
 
-        def build_schedule_content(self):
-            for widget in self.scrollable_frame.winfo_children():
-                widget.destroy()
-            tk.Label(self.scrollable_frame, text="Staff Schedule", font=(t.FONT, 22, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 10))
-            tk.Label(self.scrollable_frame, text="Your assigned shift: Today, 14:00 - 22:00 (Gate 3)", font=(t.FONT, 11), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30)
+
 
     def build_schedule_content(self):
         for widget in self.scrollable_frame.winfo_children():

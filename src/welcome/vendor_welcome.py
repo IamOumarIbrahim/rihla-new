@@ -1,3 +1,4 @@
+from datetime import datetime
 import tkinter as tk
 from tkinter import messagebox
 from .users_welcome import BaseWelcomeScreen
@@ -51,8 +52,9 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
             tk.Label(top_row, text=event['price'], font=(t.FONT, 11, "bold"), bg=t.CARD_BG, fg=t.ACCENT).pack(side=tk.RIGHT)
 
             tk.Label(card, text=event['title'], font=(t.FONT, 14, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(anchor="w", padx=15, pady=2)
-            venue_display = event.get('venue_name', 'Unknown Venue')
-            tk.Label(card, text=f"📍 {venue_display} | ⏰ {event['event_datetime']} | 🔁 {event['is_recurring']} ({event['recur_day']})", font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=15, pady=2)
+            venue_display = event.get('venue_name') or 'Unknown Venue'
+            recur_suffix = f" ({event['recur_day']})" if event['is_recurring'] == "Recurring" and event['recur_day'] not in (None, "", "None", "N/A") else ""
+            tk.Label(card, text=f"📍 {venue_display} | ⏰ {event['event_datetime']} | 🔁 {event['is_recurring']}{recur_suffix}", font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=15, pady=2)
             tk.Label(card, text=event['desc'], font=(t.FONT, 10), bg=t.CARD_BG, fg=t.TEXT_MUTED, wraplength=600, justify="left").pack(anchor="w", padx=15, pady=5)
 
             btn_row = tk.Frame(card, bg=t.CARD_BG)
@@ -125,7 +127,9 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
 
     def handle_delete_venue(self, venue_id):
         if messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this venue?"):
-            delete_venue(venue_id)
+            if not delete_venue(venue_id):
+                messagebox.showerror("Cannot delete", "This venue still has events. Delete or move those events first.")
+                return
             messagebox.showinfo("Deleted", "Venue deleted successfully.")
             self.build_venues_content()
 
@@ -149,7 +153,9 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
             if not name or name == "New Category Name":
                 messagebox.showerror("Error", "Please enter a valid category name.")
                 return
-            add_vendor_category(self.email, name)
+            if not add_vendor_category(self.email, name):
+                messagebox.showerror("Error", "You already have a category with this name.")
+                return
             messagebox.showinfo("Success", "Category added successfully!")
             self.build_categories_content()
 
@@ -343,16 +349,27 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
             if not selected_venue_name or selected_venue_name not in venue_dict:
                 messagebox.showerror("Error", "Please select a valid venue from your Manage Venues list.", parent=modal)
                 return
-            if not price_val.isdigit() or int(price_val) <= 0:
+            if not (price_val.isascii() and price_val.isdigit()) or int(price_val) <= 0:
                 messagebox.showerror("Error", "Price must contain numbers only.", parent=modal)
                 return
             if not desc or len(desc) < 10:
                 messagebox.showerror("Error", "Description must be at least 10 characters long.", parent=modal)
                 return
 
+            try:
+                parsed_datetime = datetime.strptime(event_datetime, "%Y-%m-%d %H:%M")
+            except ValueError:
+                messagebox.showerror("Error", "Date and time must look like 2026-12-31 23:00 (YYYY-MM-DD HH:MM).", parent=modal)
+                return
+            if is_recurring == "Recurring" and not selected_days_set:
+                messagebox.showerror("Error", "Pick at least one recurrence day for a recurring event.", parent=modal)
+                return
+            if is_recurring != "Recurring":
+                recur_day = "N/A"
+
             venue_id = venue_dict[selected_venue_name]
             formatted_price = f"{price_val} AED"
-            recur_time = event_datetime.split(" ")[1] if " " in event_datetime else "15:30"
+            recur_time = parsed_datetime.strftime("%H:%M")
 
             if event:
                 update_event(event["id"], title, category, formatted_price, desc, venue_id, event_datetime, is_recurring, recur_day, recur_time)
@@ -365,6 +382,13 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
             self.build_vendor_content()
 
         modal.bind("<Return>", save_event)
+
+        # Enter inside the description box must add a new line, not save the form.
+        def newline_in_description(event):
+            desc_text.insert(tk.INSERT, "\n")
+            return "break"
+
+        desc_text.bind("<Return>", newline_in_description)
 
         save_btn = tk.Button(modal, text="Save Event", font=(t.FONT, 11, "bold"), bg=t.PRIMARY, fg="white", relief="flat", command=save_event)
         save_btn.pack(fill=tk.X, padx=30, pady=15, ipady=8)

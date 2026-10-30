@@ -12,6 +12,9 @@ class DispatchView:
         self.scrollable_frame = parent_screen.scrollable_frame
 
         # Available table filters & selections
+        self.current_event_key = None
+        self.known_dispatch_values = {}
+        self.known_assigned_values = {}
         self.dispatch_selected_ids = set()
         self.dispatch_select_all_state = False
         self.dispatch_column_filters = {}
@@ -74,15 +77,20 @@ class DispatchView:
         event_options = list(event_dict.keys())
 
         selected_event_str = tk.StringVar(sel_card)
-        selected_event_str.set(event_options[0] if event_options else "")
+        # Keep the event the dispatcher chose. Before this fix every redraw jumped back to the first event.
+        if self.current_event_key in event_dict:
+            selected_event_str.set(self.current_event_key)
+        else:
+            selected_event_str.set(event_options[0] if event_options else "")
 
         # Re-build content on event change
         def on_event_change(*args):
+            self.current_event_key = selected_event_str.get()
             self.dispatch_selected_ids.clear()
             self.assigned_selected_ids.clear()
             self.build_dispatch_content()
 
-        selected_event_str.trace("w", on_event_change)
+        selected_event_str.trace_add("write", on_event_change)
 
         event_menu = tk.OptionMenu(sel_card, selected_event_str, *event_options)
         event_menu.config(font=(t.FONT, 10), bg=t.FIELD_BG)
@@ -102,10 +110,11 @@ class DispatchView:
         if not available_vehicles:
             tk.Label(self.scrollable_frame, text="No available vehicles found in fleet.", font=(t.FONT, 10, "italic"), bg=t.PAGE_BG, fg="#e74c3c").pack(anchor="w", padx=30, pady=5)
         else:
-            if not self.dispatch_column_filters:
-                for col_key in ["type", "location", "status", "reassign"]:
-                    unique_vals = set(str(self._get_val_for_col(v, col_key)) for v in available_vehicles)
-                    self.dispatch_column_filters[col_key] = unique_vals
+            for col_key in ["type", "location", "status", "reassign"]:
+                current_vals = set(str(self._get_val_for_col(v, col_key)) for v in available_vehicles)
+                known_vals = self.known_dispatch_values.setdefault(col_key, set())
+                self.dispatch_column_filters.setdefault(col_key, set()).update(current_vals - known_vals)
+                known_vals.update(current_vals)
 
             table_frame1 = tk.Frame(self.scrollable_frame, bg=t.CARD_BG, bd=1, relief="solid", highlightbackground=t.BORDER)
             table_frame1.pack(fill=tk.X, padx=30, pady=5)
@@ -191,9 +200,17 @@ class DispatchView:
                 if not self.dispatch_selected_ids:
                     messagebox.showerror("Error", "Please select available vehicles to assign.")
                     return
-                assignments = [{"vehicle_id": vid, "auto_reassign_recurring": 0} for vid in self.dispatch_selected_ids]
-                dispatch_vehicle_combination(current_event_id, assignments)
-                messagebox.showinfo("Success", f"Assigned {len(assignments)} vehicles to event!")
+                # Keep each vehicle's own auto-reassign setting (it used to be reset to 0),
+                # and only assign vehicles that are really in the Available list.
+                reassign_by_id = {v['id']: v['auto_reassign_recurring'] for v in available_vehicles}
+                assignments = [{"vehicle_id": vid, "auto_reassign_recurring": reassign_by_id[vid]} for vid in self.dispatch_selected_ids if vid in reassign_by_id]
+                if not assignments:
+                    messagebox.showerror("Error", "The selected vehicles are no longer available.")
+                    self.dispatch_selected_ids.clear()
+                    self.build_dispatch_content()
+                    return
+                assigned_count = dispatch_vehicle_combination(current_event_id, assignments)
+                messagebox.showinfo("Success", f"Assigned {assigned_count} vehicles to event!")
                 self.dispatch_selected_ids.clear()
                 self.build_dispatch_content()
 
@@ -209,10 +226,11 @@ class DispatchView:
         if not assigned_vehicles:
             tk.Label(self.scrollable_frame, text="No vehicles currently assigned to this event.", font=(t.FONT, 10, "italic"), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=5)
         else:
-            if not self.assigned_column_filters:
-                for col_key in ["type", "location", "status", "reassign"]:
-                    unique_vals = set(str(self._get_val_for_col(v, col_key)) for v in assigned_vehicles)
-                    self.assigned_column_filters[col_key] = unique_vals
+            for col_key in ["type", "location", "status", "reassign"]:
+                current_vals = set(str(self._get_val_for_col(v, col_key)) for v in assigned_vehicles)
+                known_vals = self.known_assigned_values.setdefault(col_key, set())
+                self.assigned_column_filters.setdefault(col_key, set()).update(current_vals - known_vals)
+                known_vals.update(current_vals)
 
             table_frame2 = tk.Frame(self.scrollable_frame, bg=t.CARD_BG, bd=1, relief="solid", highlightbackground=t.BORDER)
             table_frame2.pack(fill=tk.X, padx=30, pady=5)

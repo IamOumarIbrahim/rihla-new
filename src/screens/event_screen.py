@@ -32,9 +32,16 @@ def show_event_screen(root, email, tour):
     tk.Label(left_frame, text="Overview", font=(t.FONT, 14, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(anchor="w", pady=(20, 5))
     tk.Label(left_frame, text=tour["desc"], font=(t.FONT, 11), bg=t.CARD_BG, fg=t.TEXT_MUTED, wraplength=600, justify="left").pack(anchor="w", pady=5)
 
-    tk.Label(left_frame, text="What's Included", font=(t.FONT, 14, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(anchor="w", pady=(20, 5))
-    includes = ["- Hotel pickup and drop-off", "- Professional safari guide", "- BBQ dinner with vegetarian options", "- Camel riding and sandboarding"]
-    for item in includes:
+    tk.Label(left_frame, text="Event Details", font=(t.FONT, 14, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(anchor="w", pady=(20, 5))
+    recurrence_text = tour.get("is_recurring") or "One-Time"
+    if recurrence_text == "Recurring" and tour.get("recur_day") not in (None, "", "None", "N/A"):
+        recurrence_text += f" ({tour['recur_day']})"
+    details = [
+        f"- Venue: {tour.get('venue_name') or 'To be announced'}",
+        f"- Date and time: {tour.get('event_datetime') or 'To be announced'}",
+        f"- Type: {recurrence_text}",
+    ]
+    for item in details:
         tk.Label(left_frame, text=item, font=(t.FONT, 10), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", pady=2)
 
     # ----- Right Side: Booking Sidebar with Calendar Widget -----
@@ -44,11 +51,28 @@ def show_event_screen(root, email, tour):
     tk.Label(right_sidebar, text="Price Summary", font=(t.FONT, 14, "bold"), bg=t.FIELD_BG, fg=t.TEXT).pack(anchor="w", pady=(5, 5))
     tk.Label(right_sidebar, text=f"From {tour['price']}", font=(t.FONT, 16, "bold"), bg=t.FIELD_BG, fg=t.PRIMARY).pack(anchor="w", pady=(0, 15))
 
-    tk.Label(right_sidebar, text="Select Date (Tue & Thu):", font=(t.FONT, 10, "bold"), bg=t.FIELD_BG, fg=t.TEXT_MUTED).pack(anchor="w", pady=(0, 5))
+    # Which dates can be booked comes from the event itself, not from fixed days.
+    weekday_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    allowed_weekdays = set()
+    allowed_date = None
+    if tour.get("is_recurring") == "Recurring":
+        allowed_weekdays = {weekday_names.index(d.strip()) for d in (tour.get("recur_day") or "").split(",") if d.strip() in weekday_names}
+    if not allowed_weekdays:
+        try:
+            allowed_date = date.fromisoformat((tour.get("event_datetime") or "")[:10])
+        except ValueError:
+            allowed_date = None
+    if allowed_weekdays:
+        availability_text = "Select Date (" + ", ".join(weekday_names[i][:3] for i in sorted(allowed_weekdays)) + "):"
+    else:
+        availability_text = "Event date:"
+
+    tk.Label(right_sidebar, text=availability_text, font=(t.FONT, 10, "bold"), bg=t.FIELD_BG, fg=t.TEXT_MUTED).pack(anchor="w", pady=(0, 5))
 
     # Calendar Widget State
     today = date.today()
-    cal_state = {"year": today.year, "month": today.month, "selected": None}
+    start_day = allowed_date if allowed_date and allowed_date >= today else today
+    cal_state = {"year": start_day.year, "month": start_day.month, "selected": None}
 
     cal_frame = tk.Frame(right_sidebar, bg=t.CARD_BG, bd=1, relief="solid", highlightbackground=t.BORDER)
     cal_frame.pack(fill=tk.X, pady=5)
@@ -84,8 +108,8 @@ def show_event_screen(root, email, tour):
                 else:
                     d_obj = date(y, m, day)
                     is_past = d_obj < today
-                    # Available only twice a week: Tuesday (1) and Thursday (3)
-                    is_demo_day = d_obj.weekday() in (1, 3)
+                    # Bookable days come from the event (recurring weekdays, or its single date)
+                    is_demo_day = (d_obj.weekday() in allowed_weekdays) if allowed_weekdays else (d_obj == allowed_date)
                     is_unavailable = is_past or not is_demo_day
 
                     if is_unavailable:

@@ -6,6 +6,11 @@ from database import get_all_events
 import theme as t
 
 
+def _parse_price(value):
+    digits = "".join(c for c in str(value) if c in "0123456789")
+    return int(digits) if digits else 0
+
+
 class CustomerWelcomeScreen(BaseWelcomeScreen):
     def __init__(self, root, email):
         super().__init__(root, email, "Customer")
@@ -30,15 +35,19 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
                 "recur_day": e["recur_day"],
                 "recur_time": e["recur_time"],
                 "venue_id": e["venue_id"],
-                "venue_name": e.get("venue_name", "Unknown Venue"),
+                "venue_name": e.get("venue_name") or "Unknown Venue",
                 "level": e["is_recurring"],
                 "rating": "5.0 ★★★★★",
                 "desc": e["desc"]
             })
 
+        # Never hide expensive events just because they cost more than 1000 AED.
+        self.price_ceiling = max([1000] + [_parse_price(tour["price"]) for tour in self.all_tours])
+        self.search_query = ""
+
         self.current_filters = {
             "category": "All Experiences",
-            "max_price": 1000,
+            "max_price": self.price_ceiling,
             "times": [],
             "levels": []
         }
@@ -58,7 +67,7 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
         
         self.search_entry = tk.Entry(search_frame, font=(t.FONT, 11))
         self.search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5, ipady=5)
-        self.search_entry.insert(0, "Search safaris, yacht charters...")
+        self.search_entry.insert(0, self.search_query or "Search safaris, yacht charters...")
         self.search_entry.bind("<FocusIn>", lambda e: self.search_entry.delete(0, tk.END) if self.search_entry.get() == "Search safaris, yacht charters..." else None)
         
         search_btn = tk.Button(search_frame, text="Search", bg=t.ACCENT, fg="white", font=(t.FONT, 10, "bold"), relief="flat", command=self.filter_tours)
@@ -140,7 +149,7 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
 
         tk.Label(content_frame, text="Maximum Price (AED)", font=(t.FONT, 10, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", pady=(5, 5))
         
-        price_slider = tk.Scale(content_frame, from_=50, to=1000, orient=tk.HORIZONTAL, bg=t.FIELD_BG, fg=t.TEXT, font=(t.FONT, 9), highlightthickness=1, highlightbackground=t.BORDER, troughcolor=t.BORDER)
+        price_slider = tk.Scale(content_frame, from_=50, to=self.price_ceiling, orient=tk.HORIZONTAL, bg=t.FIELD_BG, fg=t.TEXT, font=(t.FONT, 9), highlightthickness=1, highlightbackground=t.BORDER, troughcolor=t.BORDER)
         price_slider.set(self.current_filters["max_price"])
         price_slider.pack(fill=tk.X, pady=5)
 
@@ -153,8 +162,8 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
             self.apply_all_filters()
 
         def reset_filters():
-            price_slider.set(1000)
-            self.current_filters = {"category": "All Experiences", "max_price": 1000, "times": [], "levels": []}
+            price_slider.set(self.price_ceiling)
+            self.current_filters = {"category": "All Experiences", "max_price": self.price_ceiling, "times": [], "levels": []}
             modal.destroy()
             self.apply_all_filters()
 
@@ -183,15 +192,19 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
 
         filtered = [t for t in filtered if parse_price(t["price"]) <= max_p]
 
+        query = self.search_query.lower()
+        if query:
+            filtered = [t for t in filtered if query in t["title"].lower() or query in t["category"].lower() or query in (t["desc"] or "").lower()]
+
         self.build_customer_content(filtered)
 
     def filter_tours(self):
-        query = self.search_entry.get().lower().strip()
-        if not query or query == "search safaris, yacht charters...":
-            filtered = self.all_tours
-        else:
-            filtered = [t for t in self.all_tours if query in t["title"].lower() or query in t["category"].lower() or query in t["desc"].lower()]
-        self.build_customer_content(filtered)
+        query = self.search_entry.get().strip()
+        if query.lower() == "search safaris, yacht charters...":
+            query = ""
+        # Keep the text, so search, category and price filters work together.
+        self.search_query = query
+        self.apply_all_filters()
 
     def filter_by_category(self, category):
         self.current_filters["category"] = category

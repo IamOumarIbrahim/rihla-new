@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import messagebox
 import theme as t
+from config import MIN_PASSWORD_LENGTH
 from database import update_password
 import navigate
 
@@ -59,6 +60,10 @@ def show_reset_password_window(root, email):
 
         if new_pass != confirm_pass:
             messagebox.showerror("Error", "Passwords do not match.", parent=reset_win)
+            return
+
+        if len(new_pass) < MIN_PASSWORD_LENGTH:
+            messagebox.showerror("Error", f"Password must be at least {MIN_PASSWORD_LENGTH} characters.", parent=reset_win)
             return
 
         update_password(email, new_pass)

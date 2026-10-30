@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import messagebox
 
-from database import check_login
+from database import check_login, get_user_email
 import navigate
 
 
@@ -20,7 +20,7 @@ def open_social_login(root, provider):
     password_entry.pack(pady=5)
 
     def handle_social_login():
-        email = email_entry.get()
+        email = email_entry.get().strip()
         password = password_entry.get()
         if not email or not password:
             messagebox.showerror("Error", "All fields are required.", parent=social_window)
@@ -28,7 +28,7 @@ def open_social_login(root, provider):
 
         if check_login(email, password):
             social_window.destroy()
-            navigate.show_welcome(root, email)
+            navigate.show_welcome(root, get_user_email(email) or email)
         else:
             messagebox.showerror("Error", "Invalid email or password.", parent=social_window)
 

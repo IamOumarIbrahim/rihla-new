@@ -1,13 +1,22 @@
 import math
 import random
+import re
 import tkinter as tk
 from tkinter import messagebox
 
 import navigate
 import theme as t
-from config import ROLES
+from config import ROLES, MIN_PASSWORD_LENGTH
 from database import register_user, email_exists, phone_exists
 from ui import clear_window
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _valid_phone(value):
+    """UAE mobile number without the +971 prefix: exactly 9 digits (spaces allowed)."""
+    digits = re.sub(r"\s+", "", value)
+    return digits.isascii() and digits.isdigit() and len(digits) == 9
 
 _rng = random.Random(7)
 _STARS = [(_rng.random(), _rng.random() * 0.5) for _ in range(45)]
@@ -80,7 +89,7 @@ def show_create_account_screen(root):
     tk.Label(form, text="Fill in your details to get started", font=(t.FONT, 10), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", pady=(2, 10))
 
     _, reg_email = _make_field(form, "EMAIL")
-    verification_status = {"email": False, "phone": False}
+    verification_status = {"email": False, "phone": False, "email_value": None, "phone_value": None}
 
     email_status = tk.Label(form, text="Email: Not Verified", font=(t.FONT, 9), bg=t.CARD_BG, fg="#e74c3c")
     email_status.pack(anchor="w", pady=2)
@@ -89,6 +98,9 @@ def show_create_account_screen(root):
         email_val = reg_email.get().strip()
         if not email_val:
             messagebox.showerror("Error", "Please enter an email first.")
+            return
+        if not _EMAIL_RE.match(email_val):
+            messagebox.showerror("Error", "Please enter a valid email address.")
             return
         if email_exists(email_val):
             messagebox.showerror("Error", "Email already exists. Please log in.")
@@ -103,6 +115,7 @@ def show_create_account_screen(root):
         def check():
             if code_e.get() == "000000":
                 verification_status["email"] = True
+                verification_status["email_value"] = email_val.lower()
                 email_status.config(text="Email: Verified ✓", fg="#27ae60")
                 win.destroy()
             else:
@@ -123,6 +136,9 @@ def show_create_account_screen(root):
     phone_status.pack(anchor="w", pady=2)
 
     def verify_phone():
+        if not _valid_phone(reg_phone.get()):
+            messagebox.showerror("Error", "Enter a valid UAE mobile number (9 digits after +971).")
+            return
         p_val = "+971 " + reg_phone.get().strip()
         if phone_exists(p_val):
             messagebox.showerror("Error", "Phone number already in use.")
@@ -136,6 +152,7 @@ def show_create_account_screen(root):
         def check():
             if code_e.get() == "000000":
                 verification_status["phone"] = True
+                verification_status["phone_value"] = p_val
                 phone_status.config(text="Phone: Verified ✓", fg="#27ae60")
                 win.destroy()
             else:
@@ -194,8 +211,8 @@ def show_create_account_screen(root):
         confirm = reg_confirm.get()
         phone = "+971 " + reg_phone.get().strip()
 
-        if not pwd or pwd.strip().lower() in ["null", "none", "password", "123456"]:
-            messagebox.showerror("Error", "Please choose a valid, secure password.")
+        if not pwd or pwd.strip().lower() in ["null", "none", "password", "123456"] or len(pwd) < MIN_PASSWORD_LENGTH:
+            messagebox.showerror("Error", f"Please choose a valid, secure password (at least {MIN_PASSWORD_LENGTH} characters).")
             return
 
         if pwd != confirm:
@@ -206,6 +223,17 @@ def show_create_account_screen(root):
             messagebox.showerror("Error", "You must verify both email and phone.")
             return
 
+        # The person must not change the email or phone after the verification step.
+        if email.lower() != verification_status["email_value"]:
+            verification_status["email"] = False
+            email_status.config(text="Email: Not Verified", fg="#e74c3c")
+        if phone != verification_status["phone_value"]:
+            verification_status["phone"] = False
+            phone_status.config(text="Phone: Not Verified", fg="#e74c3c")
+        if not verification_status["email"] or not verification_status["phone"]:
+            messagebox.showerror("Error", "Email or phone changed after verification. Please verify them again.")
+            return
+
         if not terms_var.get():
             messagebox.showerror("Error", "You must agree to the Terms & Conditions.")
             return
@@ -213,7 +241,7 @@ def show_create_account_screen(root):
         if register_user(email, pwd, "Customer", phone=phone):
             navigate.show_welcome(root, email)
         else:
-            messagebox.showerror("Error", "Registration failed.")
+            messagebox.showerror("Error", "Registration failed. An account with this email already exists.")
 
     reg_btn = tk.Button(form, text="Create Account", font=(t.FONT, 11, "bold"), bg=t.PRIMARY, fg="white", bd=0, relief="flat", command=handle_register)
     reg_btn.pack(fill=tk.X, pady=(15, 0), ipady=8)

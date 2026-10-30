@@ -6,7 +6,7 @@ from PIL import Image, ImageTk
 import navigate
 import theme as t
 from config import DEMO_ACCOUNTS, DEFAULT_LOGIN
-from database import check_login
+from database import check_login, get_user_email
 from screens.social_login import open_social_login
 from ui import clear_window
 
@@ -14,7 +14,11 @@ from ui import clear_window
 _IMAGE_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "assets", "background.jpg"))
 _raw_bg_image = None
 if os.path.exists(_IMAGE_PATH):
-    _raw_bg_image = Image.open(_IMAGE_PATH)
+    try:
+        _raw_bg_image = Image.open(_IMAGE_PATH)
+        _raw_bg_image.load()
+    except OSError:
+        _raw_bg_image = None  # Broken image file: fall back to the plain dark panel
 
 _bg_photo = None
 
@@ -126,14 +130,14 @@ def show_login_screen(root, prefilled_email=None, prefilled_password=None):
               command=lambda: peek_password()).pack(side=tk.RIGHT, padx=8)
 
     def handle_login(event=None):
-        email = email_entry.get()
+        email = email_entry.get().strip()
         password = password_entry.get()
         if not email or not password:
             messagebox.showerror("Error", "All fields are required.")
             return
 
         if check_login(email, password):
-            navigate.show_welcome(root, email)
+            navigate.show_welcome(root, get_user_email(email) or email)
         else:
             messagebox.showerror("Error", "Invalid email or password.")
 

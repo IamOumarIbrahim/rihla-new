@@ -51,7 +51,9 @@ class BaseWelcomeScreen:
             lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
         )
 
-        self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
+        self._frame_window = self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
+        # Make the content as wide as the visible area, so cards and tables fill the page.
+        self.canvas.bind("<Configure>", lambda e: self.canvas.itemconfigure(self._frame_window, width=e.width))
         self.canvas.configure(yscrollcommand=scrollbar.set)
 
         self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)

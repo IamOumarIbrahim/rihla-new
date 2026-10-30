@@ -5,7 +5,7 @@ from tkinter import messagebox
 
 import navigate
 import theme as t
-from database import get_password_by_email
+from database import email_exists
 from ui import clear_window
 from .reset_password import show_reset_password_window
 
@@ -108,8 +108,7 @@ def show_forgot_password_screen(root):
             messagebox.showerror("Error", "Email is required.")
             return
 
-        stored_password = get_password_by_email(email)
-        if not stored_password:
+        if not email_exists(email):
             messagebox.showerror("Error", "Email not found in database.")
             return
 

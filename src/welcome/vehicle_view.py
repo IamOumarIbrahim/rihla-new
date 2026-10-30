@@ -1,3 +1,4 @@
+import sqlite3
 import tkinter as tk
 from tkinter import messagebox, ttk
 import theme as t
@@ -12,6 +13,7 @@ class VehicleView:
         self.scrollable_frame = parent_screen.scrollable_frame
 
         self.column_filters = {}
+        self.known_values = {}
         self.id_filter_op = "="
         self.id_filter_val = ""
         self.license_filter_val = ""
@@ -68,6 +70,8 @@ class VehicleView:
                 messagebox.showinfo("Success", "Vehicle registered successfully!")
                 license_entry.delete(0, tk.END)
                 loc_entry.delete(0, tk.END)
+            except sqlite3.IntegrityError:
+                messagebox.showerror("Error", f"A vehicle with license number {lic} is already registered.")
             except Exception as e:
                 messagebox.showerror("Error", f"Could not add vehicle: {e}")
 
@@ -84,10 +88,13 @@ class VehicleView:
 
         vehicles = get_all_vehicles(self.email)
 
-        if not self.column_filters:
-            for col_key in ["type", "location", "status", "capacity", "reassign"]:
-                unique_vals = set(str(self._get_val_for_col(v, col_key)) for v in vehicles)
-                self.column_filters[col_key] = unique_vals
+        # Values seen for the first time (new vehicle, new status...) are shown by default.
+        # Before this fix, a vehicle set to "Maintenance" disappeared from the table.
+        for col_key in ["type", "location", "status", "capacity", "reassign"]:
+            current_vals = set(str(self._get_val_for_col(v, col_key)) for v in vehicles)
+            known_vals = self.known_values.setdefault(col_key, set())
+            self.column_filters.setdefault(col_key, set()).update(current_vals - known_vals)
+            known_vals.update(current_vals)
 
         table_frame = tk.Frame(self.scrollable_frame, bg=t.CARD_BG, bd=1, relief="solid", highlightbackground=t.BORDER)
         table_frame.pack(fill=tk.X, padx=30, pady=5)
@@ -200,7 +207,6 @@ class VehicleView:
             for vid in self.selected_ids:
                 delete_vehicle(vid)
             self.selected_ids.clear()
-            self.column_filters.clear()
             self.build_fleet_management_content()
 
     def handle_status(self, new_status):
@@ -223,7 +229,7 @@ class VehicleView:
 
     def toggle_select_all_rows(self):
         vehicles = get_all_vehicles(self.email)
-        all_ids = {v['id'] for v in vehicles}
+        all_ids = {v['id'] for v in vehicles if self._is_visible(v)}
         if self.select_all_state:
             self.selected_ids.clear()
             self.select_all_state = False
@@ -231,6 +237,26 @@ class VehicleView:
             self.selected_ids = all_ids
             self.select_all_state = True
         self.build_fleet_management_content()
+
+    def _is_visible(self, v):
+        """Same rules as the table, so 'select all' only picks rows the user can see."""
+        if self.id_filter_val:
+            try:
+                target = int(self.id_filter_val)
+                if self.id_filter_op == "=" and v['id'] != target:
+                    return False
+                if self.id_filter_op == ">" and v['id'] <= target:
+                    return False
+                if self.id_filter_op == "<" and v['id'] >= target:
+                    return False
+            except ValueError:
+                pass
+        if self.license_filter_val and str(v['license_number']).strip() != str(self.license_filter_val).strip():
+            return False
+        for ck in ["type", "location", "status", "capacity", "reassign"]:
+            if str(self._get_val_for_col(v, ck)) not in self.column_filters.get(ck, set()):
+                return False
+        return True
 
     def _get_val_for_col(self, v, col_key):
         if col_key == "id":

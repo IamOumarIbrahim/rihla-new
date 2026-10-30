@@ -1,4 +1,7 @@
+import hashlib
+import hmac
 import os
+import secrets
 import sqlite3
 from contextlib import contextmanager
 
@@ -15,6 +18,32 @@ def _connect():
         conn.commit()
     finally:
         conn.close()
+
+
+_HASH_PREFIX = "pbkdf2$"
+_HASH_ROUNDS = 200_000
+
+
+def hash_password(password):
+    """Salted PBKDF2 hash, so passwords are never stored as plain text."""
+    salt = secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(salt), _HASH_ROUNDS)
+    return f"{_HASH_PREFIX}{_HASH_ROUNDS}${salt}${digest.hex()}"
+
+
+def verify_password(password, stored):
+    if not stored:
+        return False
+    if not stored.startswith(_HASH_PREFIX):
+        # Old row created before hashing was added (plain text).
+        return hmac.compare_digest(password.encode("utf-8"), stored.encode("utf-8"))
+    try:
+        _, rounds, salt, digest = stored.split("$")
+        candidate = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(salt), int(rounds))
+    except ValueError:
+        return False
+    return hmac.compare_digest(candidate.hex(), digest)
+
 
 def init_db():
     with _connect() as conn:
@@ -118,7 +147,7 @@ def init_db():
         cursor.execute("SELECT COUNT(*) FROM venues")
         if cursor.fetchone()[0] == 0:
             conn.execute("INSERT INTO venues (name, address, vendor_email) VALUES (?, ?, ?)", 
-                         ("Burj Khalifa", "Dubai Downtown, Dubai, Sharjah", "vendor@email.com"))
+                         ("Burj Khalifa", "Dubai Downtown, Dubai", "vendor@email.com"))
             conn.execute("INSERT INTO venues (name, address, vendor_email) VALUES (?, ?, ?)", 
                          ("Dubai Desert Conservation Reserve", "Al Ain Road, Dubai", "vendor@email.com"))
 
@@ -159,29 +188,56 @@ def init_db():
                 ("1234567890123456", "New year dinner", "customer@email.com", "Valid")
             )
 
+        # Fix the wrong address that older versions saved for the first venue.
+        conn.execute("UPDATE venues SET address = 'Dubai Downtown, Dubai' WHERE address = 'Dubai Downtown, Dubai, Sharjah'")
+
+        # The demo accounts on the login screen must really exist in the database.
+        for demo_role, (demo_email, demo_password) in DEMO_ACCOUNTS.items():
+            exists = conn.execute("SELECT 1 FROM users WHERE lower(email) = ?", (demo_email.lower(),)).fetchone()
+            if not exists:
+                conn.execute(
+                    "INSERT INTO users (email, password, role, phone) VALUES (?, ?, ?, ?)",
+                    (demo_email, hash_password(demo_password), demo_role, None),
+                )
+
 def register_user(email, password, role="Customer", phone=None):
     if role not in ROLES:
         role = "Customer"
+    email = (email or "").strip().lower()
+    if not email or not password or email_exists(email):
+        return False
     try:
         with _connect() as conn:
             conn.execute(
                 "INSERT INTO users (email, password, role, phone) VALUES (?, ?, ?, ?)",
-                (email, password, role, phone),
+                (email, hash_password(password), role, phone),
             )
         return True
     except sqlite3.IntegrityError:
         return False
 
 def check_login(email, password):
+    email = (email or "").strip()
     with _connect() as conn:
         row = conn.execute(
-            "SELECT 1 FROM users WHERE email = ? AND password = ?", (email, password)
+            "SELECT email, password FROM users WHERE lower(email) = lower(?)", (email,)
         ).fetchone()
-    return row is not None
+        if row is None or not verify_password(password, row[1]):
+            return False
+        if not row[1].startswith(_HASH_PREFIX):
+            # Upgrade an old plain-text password to a salted hash after a successful login.
+            conn.execute("UPDATE users SET password = ? WHERE email = ?", (hash_password(password), row[0]))
+    return True
+
+def get_user_email(email):
+    """Returns the email exactly as stored (the typed letter case does not matter), or None."""
+    with _connect() as conn:
+        row = conn.execute("SELECT email FROM users WHERE lower(email) = lower(?)", ((email or "").strip(),)).fetchone()
+    return row[0] if row else None
 
 def get_role(email):
     with _connect() as conn:
-        row = conn.execute("SELECT role FROM users WHERE email = ?", (email,)).fetchone()
+        row = conn.execute("SELECT role FROM users WHERE lower(email) = lower(?)", ((email or "").strip(),)).fetchone()
     return row[0] if row and row[0] else "Customer"
 
 def get_password_by_email(email):
@@ -191,11 +247,14 @@ def get_password_by_email(email):
 
 def update_password(email, new_password):
     with _connect() as conn:
-        conn.execute("UPDATE users SET password = ? WHERE email = ?", (new_password, email))
+        conn.execute(
+            "UPDATE users SET password = ? WHERE lower(email) = lower(?)",
+            (hash_password(new_password), (email or "").strip()),
+        )
 
 def email_exists(email):
     with _connect() as conn:
-        row = conn.execute("SELECT 1 FROM users WHERE email = ?", (email,)).fetchone()
+        row = conn.execute("SELECT 1 FROM users WHERE lower(email) = lower(?)", ((email or "").strip(),)).fetchone()
     return row is not None
 
 def phone_exists(phone):
@@ -218,8 +277,13 @@ def create_venue(name, address, vendor_email):
         conn.execute("INSERT INTO venues (name, address, vendor_email) VALUES (?, ?, ?)", (name, address, vendor_email))
 
 def delete_venue(venue_id):
+    """Returns False (and deletes nothing) while events still use this venue."""
     with _connect() as conn:
+        in_use = conn.execute("SELECT 1 FROM events WHERE venue_id = ? LIMIT 1", (venue_id,)).fetchone()
+        if in_use:
+            return False
         conn.execute("DELETE FROM venues WHERE id = ?", (venue_id,))
+    return True
 
 def create_event(title, category, price, description, vendor_email, venue_id, event_datetime, is_recurring, recur_day, recur_time):
     with _connect() as conn:
@@ -261,6 +325,13 @@ def update_event(event_id, title, category, price, description, venue_id, event_
 
 def delete_event(event_id):
     with _connect() as conn:
+        # Release vehicles dispatched to this event so they do not stay "Assigned" forever.
+        conn.execute(
+            "UPDATE vehicles SET status = 'Available' WHERE status = 'Assigned' AND id IN "
+            "(SELECT vehicle_id FROM event_vehicles WHERE event_id = ? AND status = 'Assigned')",
+            (event_id,),
+        )
+        conn.execute("DELETE FROM event_vehicles WHERE event_id = ?", (event_id,))
         conn.execute("DELETE FROM events WHERE id = ?", (event_id,))
 
 def get_vendor_categories(vendor_email):
@@ -269,17 +340,23 @@ def get_vendor_categories(vendor_email):
     return [{"id": r[0], "name": r[1]} for r in rows]
 
 def add_vendor_category(vendor_email, name):
-    try:
-        with _connect() as conn:
-            conn.execute("INSERT INTO vendor_categories (vendor_email, name) VALUES (?, ?)", (vendor_email, name))
-    except Exception:
-        pass
+    """Returns False when this vendor already has a category with the same name."""
+    name = name.strip()
+    with _connect() as conn:
+        duplicate = conn.execute(
+            "SELECT 1 FROM vendor_categories WHERE vendor_email = ? AND lower(name) = lower(?)",
+            (vendor_email, name),
+        ).fetchone()
+        if duplicate:
+            return False
+        conn.execute("INSERT INTO vendor_categories (vendor_email, name) VALUES (?, ?)", (vendor_email, name))
+    return True
 
 def delete_vendor_category(category_id):
     with _connect() as conn:
         conn.execute("DELETE FROM vendor_categories WHERE id = ?", (category_id,))
 
-def verify_ticket_code(ticket_code):
+def verify_ticket_code(ticket_code, expected_event_title=None):
     with _connect() as conn:
         row = conn.execute(
             "SELECT event_title, customer_email, status FROM tickets WHERE ticket_code = ?", (ticket_code,)
@@ -288,11 +365,20 @@ def verify_ticket_code(ticket_code):
         return {"success": False, "message": "Invalid ticket code. Not found in system."}
     
     event_title, customer_email, status = row
+    if expected_event_title and event_title != expected_event_title:
+        return {"success": False, "message": f"Wrong event. This ticket is for {event_title}."}
     if status == "Used":
         return {"success": False, "message": "Ticket already used! Checked in previously."}
     
     with _connect() as conn:
-        conn.execute("UPDATE tickets SET status = 'Used' WHERE ticket_code = ?", (ticket_code,))
+        # One atomic update, so two scanners cannot both accept the same ticket.
+        cursor = conn.execute(
+            "UPDATE tickets SET status = 'Used' WHERE ticket_code = ? AND COALESCE(status, '') != 'Used'",
+            (ticket_code,),
+        )
+        updated = cursor.rowcount
+    if not updated:
+        return {"success": False, "message": "Ticket already used! Checked in previously."}
     
     return {"success": True, "message": f"Access granted! Ticket valid for {event_title} ({customer_email})."}
 
@@ -322,19 +408,34 @@ def create_vehicle(license_number, vehicle_type, location, dispatcher_email, aut
 
 def delete_vehicle(vehicle_id):
     with _connect() as conn:
+        conn.execute("DELETE FROM event_vehicles WHERE vehicle_id = ?", (vehicle_id,))
         conn.execute("DELETE FROM vehicles WHERE id = ?", (vehicle_id,))
 
 def update_vehicle_status(vehicle_id, status):
     with _connect() as conn:
+        if status != "Assigned":
+            # A vehicle that is no longer assigned must not stay linked to an event.
+            conn.execute(
+                "UPDATE event_vehicles SET status = 'Concluded' WHERE vehicle_id = ? AND status = 'Assigned'",
+                (vehicle_id,),
+            )
         conn.execute("UPDATE vehicles SET status = ? WHERE id = ?", (status, vehicle_id))
 
 def dispatch_vehicle_combination(event_id, vehicle_assignments):
+    """Assigns only vehicles that are still Available. Returns how many were assigned."""
+    assigned = 0
     with _connect() as conn:
         for item in vehicle_assignments:
             vid = item["vehicle_id"]
             reassign = item["auto_reassign_recurring"]
-            conn.execute("INSERT INTO event_vehicles (event_id, vehicle_id, status) VALUES (?, ?, 'Assigned')", (event_id, vid))
-            conn.execute("UPDATE vehicles SET status = 'Assigned', auto_reassign_recurring = ? WHERE id = ?", (reassign, vid))
+            updated = conn.execute(
+                "UPDATE vehicles SET status = 'Assigned', auto_reassign_recurring = ? WHERE id = ? AND status = 'Available'",
+                (reassign, vid),
+            ).rowcount
+            if updated:
+                conn.execute("INSERT INTO event_vehicles (event_id, vehicle_id, status) VALUES (?, ?, 'Assigned')", (event_id, vid))
+                assigned += 1
+    return assigned
 
 def free_vehicle(vehicle_id):
     with _connect() as conn:
