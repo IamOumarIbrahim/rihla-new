@@ -1,6 +1,7 @@
+import os
 from datetime import datetime
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, filedialog
 from .users_welcome import BaseWelcomeScreen
 from database import (
     get_events_by_vendor, create_event, update_event, delete_event,
@@ -9,6 +10,8 @@ from database import (
     get_bookings_by_vendor, get_event_capacity, DEFAULT_EVENT_CAPACITY, MAX_EVENT_CAPACITY
 )
 import theme as t
+import icons as ic
+import event_images
 
 
 class VendorWelcomeScreen(BaseWelcomeScreen):
@@ -16,11 +19,11 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
         super().__init__(root, email, "Vendor")
         self.root = root
 
-        self.add_nav_button("My Events", self.build_vendor_content)
-        self.add_nav_button("Bookings", self.build_bookings_content)
-        self.add_nav_button("Manage Venues", self.build_venues_content)
-        self.add_nav_button("Manage Categories", self.build_categories_content)
-        self.add_nav_button("Add New Event", self.open_add_event_modal)
+        self.add_nav_button("My Events", self.build_vendor_content, icon="calendar")
+        self.add_nav_button("Bookings", self.build_bookings_content, icon="ticket")
+        self.add_nav_button("Manage Venues", self.build_venues_content, icon="stadium")
+        self.add_nav_button("Manage Categories", self.build_categories_content, icon="tag")
+        self.add_nav_button("Add New Event", self.open_add_event_modal, icon="plus")
 
         self.build_vendor_content()
 
@@ -34,7 +37,7 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
         action_frame = tk.Frame(self.scrollable_frame, bg=t.PAGE_BG)
         action_frame.pack(fill=tk.X, padx=30, pady=10)
         
-        add_btn = tk.Button(action_frame, text="+ Create New Event Listing", font=(t.FONT, 10, "bold"), bg=t.ACCENT, fg="white", relief="flat", command=self.open_add_event_modal)
+        add_btn = tk.Button(action_frame, text=f"{ic.emoji('plus')} Create New Event Listing", font=(t.FONT, 10, "bold"), bg=t.ACCENT, fg="white", relief="flat", command=self.open_add_event_modal)
         add_btn.pack(side=tk.LEFT, ipadx=15, ipady=8)
         t.add_hover(add_btn, t.ACCENT, "#e67e22")
 
@@ -45,35 +48,36 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
             return
 
         for event in events:
-            card = tk.Frame(self.scrollable_frame, bg=t.CARD_BG, bd=1, relief="solid", highlightbackground=t.BORDER)
-            card.pack(fill=tk.X, padx=30, pady=10, ipady=10)
+            outer = tk.Frame(self.scrollable_frame, bg=t.CARD_BG, bd=1, relief="solid", highlightbackground=t.BORDER)
+            outer.pack(fill=tk.X, padx=30, pady=10, ipady=10)
+            card = event_images.build_card_shell(outer, event["id"], text_weight=3, image_weight=1)
 
             top_row = tk.Frame(card, bg=t.CARD_BG)
             top_row.pack(fill=tk.X, padx=15, pady=5)
-            tk.Label(top_row, text=f"Category: {event['category']}", font=(t.FONT, 10, "bold"), bg=t.CARD_BG, fg=t.PRIMARY).pack(side=tk.LEFT)
+            tk.Label(top_row, text=f"{ic.emoji('tag')} Category: {event['category']}", font=(t.FONT, 10, "bold"), bg=t.CARD_BG, fg=t.PRIMARY).pack(side=tk.LEFT)
             tk.Label(top_row, text=event['price'], font=(t.FONT, 11, "bold"), bg=t.CARD_BG, fg=t.ACCENT).pack(side=tk.RIGHT)
 
             tk.Label(card, text=event['title'], font=(t.FONT, 14, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(anchor="w", padx=15, pady=2)
             venue_display = event.get('venue_name') or 'Unknown Venue'
             recur_suffix = f" ({event['recur_day']})" if event['is_recurring'] == "Recurring" and event['recur_day'] not in (None, "", "None", "N/A") else ""
-            tk.Label(card, text=f"{venue_display}  |  {event['event_datetime']}  |  {event['is_recurring']}{recur_suffix}", font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=15, pady=2)
+            tk.Label(card, text=f"{venue_display}  | {event['event_datetime']} |  {event['is_recurring']}{recur_suffix}", font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=15, pady=2)
             cap = get_event_capacity(event['id'])
             if cap['vehicles']:
                 vehicle_count = sum(v['count'] for v in cap['vehicles'])
                 capacity_text = f"Capacity: {cap['total']} guests (seats of {vehicle_count} assigned vehicle(s))"
             else:
-                capacity_text = f"Capacity: {cap['total']} guests (no vehicles assigned)"
+                capacity_text = f" Capacity: {cap['total']} guests (no vehicles assigned)"
             tk.Label(card, text=capacity_text, font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=15, pady=2)
             tk.Label(card, text=event['desc'], font=(t.FONT, 10), bg=t.CARD_BG, fg=t.TEXT_MUTED, wraplength=600, justify="left").pack(anchor="w", padx=15, pady=5)
 
             btn_row = tk.Frame(card, bg=t.CARD_BG)
             btn_row.pack(anchor="w", padx=15, pady=(5, 10))
 
-            edit_btn = tk.Button(btn_row, text="Edit", bg=t.PRIMARY, fg="white", font=(t.FONT, 9, "bold"), relief="flat", command=lambda e=event: self.open_edit_event_modal(e))
+            edit_btn = tk.Button(btn_row, text=f"{ic.emoji('edit')} Edit", bg=t.PRIMARY, fg="white", font=(t.FONT, 9, "bold"), relief="flat", command=lambda e=event: self.open_edit_event_modal(e))
             edit_btn.pack(side=tk.LEFT, padx=(0, 10), ipadx=10, ipady=4)
             t.add_hover(edit_btn, t.PRIMARY, t.PRIMARY_HOVER)
 
-            delete_btn = tk.Button(btn_row, text="Delete", bg="#e74c3c", fg="white", font=(t.FONT, 9, "bold"), relief="flat", command=lambda eid=event['id']: self.handle_delete(eid))
+            delete_btn = tk.Button(btn_row, text=f"{ic.emoji('trash')} Delete", bg="#e74c3c", fg="white", font=(t.FONT, 9, "bold"), relief="flat", command=lambda eid=event['id']: self.handle_delete(eid))
             delete_btn.pack(side=tk.LEFT, ipadx=10, ipady=4)
             t.add_hover(delete_btn, "#e74c3c", "#c0392b")
 
@@ -134,7 +138,7 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
             messagebox.showinfo("Success", "Venue added successfully!")
             self.build_venues_content()
 
-        add_btn = tk.Button(add_box, text="Add Venue", font=(t.FONT, 10, "bold"), bg=t.PRIMARY, fg="white", relief="flat", command=handle_add_venue)
+        add_btn = tk.Button(add_box, text=f"{ic.emoji('plus')} Add Venue", font=(t.FONT, 10, "bold"), bg=t.PRIMARY, fg="white", relief="flat", command=handle_add_venue)
         add_btn.pack(side=tk.LEFT, ipadx=15, ipady=7)
         t.add_hover(add_btn, t.PRIMARY, t.PRIMARY_HOVER)
 
@@ -157,7 +161,7 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
             def make_delete(vid):
                 return lambda: self.handle_delete_venue(vid)
 
-            del_btn = tk.Button(row, text="Delete", font=(t.FONT, 9, "bold"), bg="#e74c3c", fg="white", relief="flat", command=make_delete(v["id"]))
+            del_btn = tk.Button(row, text=f"{ic.emoji('trash')} Delete", font=(t.FONT, 9, "bold"), bg="#e74c3c", fg="white", relief="flat", command=make_delete(v["id"]))
             del_btn.pack(side=tk.RIGHT, padx=10, ipadx=8, ipady=3)
             t.add_hover(del_btn, "#e74c3c", "#c0392b")
 
@@ -195,7 +199,7 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
             messagebox.showinfo("Success", "Category added successfully!")
             self.build_categories_content()
 
-        add_btn = tk.Button(add_box, text="Add Category", font=(t.FONT, 10, "bold"), bg=t.PRIMARY, fg="white", relief="flat", command=handle_add_category)
+        add_btn = tk.Button(add_box, text=f"{ic.emoji('plus')} Add Category", font=(t.FONT, 10, "bold"), bg=t.PRIMARY, fg="white", relief="flat", command=handle_add_category)
         add_btn.pack(side=tk.LEFT, ipadx=15, ipady=7)
         t.add_hover(add_btn, t.PRIMARY, t.PRIMARY_HOVER)
 
@@ -218,7 +222,7 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
             def make_delete(cid):
                 return lambda: self.handle_delete_category(cid)
 
-            del_btn = tk.Button(row, text="Delete", font=(t.FONT, 9, "bold"), bg="#e74c3c", fg="white", relief="flat", command=make_delete(cat["id"]))
+            del_btn = tk.Button(row, text=f"{ic.emoji('trash')} Delete", font=(t.FONT, 9, "bold"), bg="#e74c3c", fg="white", relief="flat", command=make_delete(cat["id"]))
             del_btn.pack(side=tk.RIGHT, padx=10, ipadx=8, ipady=3)
             t.add_hover(del_btn, "#e74c3c", "#c0392b")
 
@@ -237,13 +241,13 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
     def open_event_form(self, window_title, event=None):
         modal = tk.Toplevel(self.root)
         modal.title(window_title)
-        modal.geometry("480x760")
+        modal.geometry("480x840")
         modal.configure(bg=t.CARD_BG)
         modal.resizable(False, False)
 
         modal.update_idletasks()
         x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (480 // 2)
-        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (760 // 2)
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (840 // 2)
         modal.geometry(f"+{x}+{y}")
 
         tk.Label(modal, text=window_title, font=(t.FONT, 18, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 10))
@@ -372,6 +376,36 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
         capacity_entry.pack(fill=tk.X, ipady=4)
         capacity_entry.insert(0, str(event.get("capacity") or DEFAULT_EVENT_CAPACITY) if event else str(DEFAULT_EVENT_CAPACITY))
 
+        # Picture (optional): shown on the right of the event card, cropped to fit, never stretched.
+        pic_state = {"b64": None, "remove": False}
+        tk.Label(form_frame, text=f"EVENT PICTURE (OPTIONAL)", font=(t.FONT, 9, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", pady=(8, 2))
+        pic_row = tk.Frame(form_frame, bg=t.CARD_BG)
+        pic_row.pack(fill=tk.X)
+        had_picture = bool(event) and event_images.load_image(event["id"]) is not None
+        pic_label = tk.Label(pic_row, text="Current picture kept" if had_picture else "No picture selected", font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED)
+
+        def choose_picture():
+            path = filedialog.askopenfilename(parent=modal, title="Choose event picture",
+                                              filetypes=[("Pictures", "*.png *.jpg *.jpeg *.webp *.bmp *.gif"), ("All files", "*.*")])
+            if not path:
+                return
+            try:
+                pic_state["b64"] = event_images.encode_image_file(path)
+            except Exception as exc:
+                messagebox.showerror("Picture", f"This picture could not be used: {exc}", parent=modal)
+                return
+            pic_state["remove"] = False
+            pic_label.config(text=os.path.basename(path))
+
+        def remove_picture():
+            pic_state["b64"] = None
+            pic_state["remove"] = True
+            pic_label.config(text="No picture selected")
+
+        tk.Button(pic_row, text="Choose picture...", font=(t.FONT, 9, "bold"), bg=t.CHIP_BG, fg=t.TEXT, relief="flat", command=choose_picture).pack(side=tk.LEFT, ipadx=8, ipady=3)
+        tk.Button(pic_row, text="Remove", font=(t.FONT, 9), bg=t.CHIP_BG, fg="#e74c3c", relief="flat", command=remove_picture).pack(side=tk.LEFT, padx=(6, 0), ipadx=6, ipady=3)
+        pic_label.pack(side=tk.LEFT, padx=8)
+
         # Description
         tk.Label(form_frame, text="DESCRIPTION", font=(t.FONT, 9, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", pady=(8, 2))
         desc_text = tk.Text(form_frame, font=(t.FONT, 10), bg=t.FIELD_BG, relief="solid", bd=1, height=3, width=30)
@@ -421,10 +455,19 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
             recur_time = parsed_datetime.strftime("%H:%M")
 
             if event:
-                update_event(event["id"], title, category, formatted_price, desc, venue_id, event_datetime, is_recurring, recur_day, recur_time, capacity=int(capacity_val))
+                res = update_event(event["id"], title, category, formatted_price, desc, venue_id, event_datetime, is_recurring, recur_day, recur_time,
+                                   capacity=int(capacity_val), image_b64=pic_state["b64"], remove_image=pic_state["remove"])
+                if not res.get("success", False):
+                    messagebox.showerror("Error", res.get("message", "The event could not be saved."), parent=modal)
+                    return
+                event_images.forget(event["id"])
                 messagebox.showinfo("Success", "Event updated successfully!", parent=modal)
             else:
-                create_event(title, category, formatted_price, desc, self.email, venue_id, event_datetime, is_recurring, recur_day, recur_time, capacity=int(capacity_val))
+                res = create_event(title, category, formatted_price, desc, self.email, venue_id, event_datetime, is_recurring, recur_day, recur_time,
+                                   capacity=int(capacity_val), image_b64=pic_state["b64"])
+                if not res.get("success", False):
+                    messagebox.showerror("Error", res.get("message", "The event could not be saved."), parent=modal)
+                    return
                 messagebox.showinfo("Success", "Event created successfully!", parent=modal)
 
             modal.destroy()
@@ -439,7 +482,7 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
 
         desc_text.bind("<Return>", newline_in_description)
 
-        save_btn = tk.Button(modal, text="Save Event", font=(t.FONT, 11, "bold"), bg=t.PRIMARY, fg="white", relief="flat", command=save_event)
+        save_btn = tk.Button(modal, text=f"Save", font=(t.FONT, 11, "bold"), bg=t.PRIMARY, fg="white", relief="flat", command=save_event)
         save_btn.pack(fill=tk.X, padx=30, pady=15, ipady=8)
         t.add_hover(save_btn, t.PRIMARY, t.PRIMARY_HOVER)
 

@@ -30,8 +30,69 @@ os.makedirs(_ICONS_DIR, exist_ok=True)
 
 _CDN = "https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/{name}.svg"
 
+# Set to True to fetch missing icons from the CDN. False = never touch the network.
+ALLOW_DOWNLOADS = False
+
 # ── in-process cache so the same (name, size, color) is created only once ────
 _cache: dict[tuple, object] = {}
+
+
+# ---- emoji mode -------------------------------------------------------------
+# True = show emoji next to labels instead of SVG icons (no downloads, no tksvg).
+USE_EMOJI = True
+
+EMOJI = {
+    "search":    "\U0001F50D",
+    "filter":    "\u2699",
+    "star":      "\u2B50",
+    "map_pin":   "\U0001F4CD",
+    "repeat":    "\U0001F501",
+    "users":     "\U0001F465",
+    "user":      "\U0001F464",
+    "copy":      "\U0001F4CB",
+    "close":     "\u2716",
+    "back":      "\u2B05",
+    "calendar":  "\U0001F4C5",
+    "clock":     "\U0001F552",
+    "truck":     "\U0001F690",
+    "shield":    "\U0001F6E1",
+    "plus":      "\u2795",
+    "payment":   "\U0001F4B3",
+    "cart":      "\U0001F6D2",
+    "ticket":    "\U0001F39F",
+    "check":     "\u2705",
+    "alert":     "\u26A0",
+    "trash":     "\U0001F5D1",
+    "refresh":   "\U0001F504",
+    "globe":     "\U0001F30D",
+    "bell":      "\U0001F514",
+    "lock":      "\U0001F512",
+    "tag":       "\U0001F3F7",
+    "dollar":    "\U0001F4B0",
+    "list":      "\U0001F4CB",
+    "building":  "\U0001F3E2",
+    "bar_chart": "\U0001F4CA",
+    "eye":       "\U0001F441",
+    "logout":    "\U0001F6AA",
+    "settings":  "\u2699",
+    "scan":      "\U0001F4F7",
+    "wave":      "\U0001F44B",
+    "sparkles":  "\u2728",
+    "compass":   "\U0001F9ED",
+    "chat":      "\U0001F4AC",
+    "stadium":   "\U0001F3DF",
+    "edit":      "\u270F",
+    "car":       "\U0001F697",
+    "wrench":    "\U0001F527",
+    "cross":     "\u274C",
+    "handshake": "\U0001F91D",
+    "picture":   "\U0001F5BC",
+}
+
+
+def emoji(name: str) -> str:
+    """Emoji for an icon name (empty string if emoji mode is off or the name is unknown)."""
+    return EMOJI.get(name, "") if USE_EMOJI else ""
 
 
 def _svg_path(name: str) -> str:
@@ -42,6 +103,8 @@ def _download(name: str) -> str:
     """Download icon SVG from CDN if not already cached on disk. Returns local path."""
     path = _svg_path(name)
     if not os.path.exists(path):
+        if not ALLOW_DOWNLOADS:
+            raise FileNotFoundError(f"Icon '{name}' is not cached and downloads are disabled.")
         url = _CDN.format(name=name)
         try:
             urllib.request.urlretrieve(url, path)
@@ -90,6 +153,9 @@ def get_icon(name: str, size: int = 18, color: str = "#2c3e50", master=None):
     color   : stroke color as hex string
     master  : Tkinter widget/root needed by tksvg (usually the root window)
     """
+    if USE_EMOJI:
+        return None
+
     if not _TKSVG_AVAILABLE:
         return None
 

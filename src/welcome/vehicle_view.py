@@ -1,7 +1,7 @@
-import sqlite3
 import tkinter as tk
 from tkinter import messagebox, ttk
 import theme as t
+import icons as ic
 from database import get_all_vehicles, create_vehicle, delete_vehicle, update_vehicle_status, free_vehicle, get_vehicle_types
 
 
@@ -24,7 +24,7 @@ class VehicleView:
         for widget in self.scrollable_frame.winfo_children():
             widget.destroy()
 
-        tk.Label(self.scrollable_frame, text="Register New Vehicles", font=(t.FONT, 22, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 5))
+        tk.Label(self.scrollable_frame, text=f"Register Vehicles", font=(t.FONT, 22, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 5))
         tk.Label(self.scrollable_frame, text="Add vehicles to the system inventory using their 5-digit license numbers.", font=(t.FONT, 11), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=(0, 15))
 
         form_card = tk.Frame(self.scrollable_frame, bg=t.CARD_BG, bd=1, relief="solid", highlightbackground=t.BORDER)
@@ -70,12 +70,15 @@ class VehicleView:
                 messagebox.showinfo("Success", "Vehicle registered successfully!")
                 license_entry.delete(0, tk.END)
                 loc_entry.delete(0, tk.END)
-            except sqlite3.IntegrityError:
-                messagebox.showerror("Error", f"A vehicle with license number {lic} is already registered.")
+            except ValueError as e:
+                if "UNIQUE" in str(e).upper():
+                    messagebox.showerror("Error", f"A vehicle with license number {lic} is already registered.")
+                else:
+                    messagebox.showerror("Error", f"Could not add vehicle: {e}")
             except Exception as e:
                 messagebox.showerror("Error", f"Could not add vehicle: {e}")
 
-        add_btn = tk.Button(form_card, text="Register Vehicle", font=(t.FONT, 11, "bold"), bg=t.PRIMARY, fg="white", relief="flat", command=handle_add_vehicle)
+        add_btn = tk.Button(form_card, text=f"{ic.emoji('plus')} Register Vehicle", font=(t.FONT, 11, "bold"), bg=t.PRIMARY, fg="white", relief="flat", command=handle_add_vehicle)
         add_btn.pack(anchor="w", padx=10, pady=(20, 5), ipadx=15, ipady=8)
         t.add_hover(add_btn, t.PRIMARY, t.PRIMARY_HOVER)
 
@@ -83,7 +86,7 @@ class VehicleView:
         for widget in self.scrollable_frame.winfo_children():
             widget.destroy()
 
-        tk.Label(self.scrollable_frame, text="Fleet Maintenance & Status Management", font=(t.FONT, 22, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 5))
+        tk.Label(self.scrollable_frame, text=f"Fleet Maintenance & Status Management", font=(t.FONT, 22, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 5))
         tk.Label(self.scrollable_frame, text="Filter, sort, select vehicles, and view their assigned capacities.", font=(t.FONT, 11), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=(0, 15))
 
         vehicles = get_all_vehicles(self.email)
@@ -187,16 +190,16 @@ class VehicleView:
         btn_frame = tk.Frame(self.scrollable_frame, bg=t.PAGE_BG)
         btn_frame.pack(fill=tk.X, padx=30, pady=15)
 
-        del_btn = tk.Button(btn_frame, text="Delete Selected", bg="#e74c3c", fg="white", font=(t.FONT, 9, "bold"), relief="flat", command=lambda: self.handle_delete(vehicles))
+        del_btn = tk.Button(btn_frame, text=f"Delete Selected", bg="#e74c3c", fg="white", font=(t.FONT, 9, "bold"), relief="flat", command=lambda: self.handle_delete(vehicles))
         del_btn.pack(side=tk.LEFT, padx=(0, 10), ipadx=10, ipady=6)
 
-        maint_btn = tk.Button(btn_frame, text="Set Maintenance", bg="#f39c12", fg="white", font=(t.FONT, 9, "bold"), relief="flat", command=lambda: self.handle_status("Maintenance"))
+        maint_btn = tk.Button(btn_frame, text=f"Set Maintenance", bg="#f39c12", fg="white", font=(t.FONT, 9, "bold"), relief="flat", command=lambda: self.handle_status("Maintenance"))
         maint_btn.pack(side=tk.LEFT, padx=(0, 10), ipadx=10, ipady=6)
 
-        avail_btn = tk.Button(btn_frame, text="Set Available", bg="#27ae60", fg="white", font=(t.FONT, 9, "bold"), relief="flat", command=lambda: self.handle_status("Available"))
+        avail_btn = tk.Button(btn_frame, text=f"Set Available", bg="#27ae60", fg="white", font=(t.FONT, 9, "bold"), relief="flat", command=lambda: self.handle_status("Available"))
         avail_btn.pack(side=tk.LEFT, padx=(0, 10), ipadx=10, ipady=6)
 
-        free_btn = tk.Button(btn_frame, text="Free Up", bg="#2980b9", fg="white", font=(t.FONT, 9, "bold"), relief="flat", command=self.handle_free)
+        free_btn = tk.Button(btn_frame, text=f"Free Up", bg="#2980b9", fg="white", font=(t.FONT, 9, "bold"), relief="flat", command=self.handle_free)
         free_btn.pack(side=tk.LEFT, ipadx=10, ipady=6)
 
     def handle_delete(self, vehicles):

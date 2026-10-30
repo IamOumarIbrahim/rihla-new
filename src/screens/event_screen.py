@@ -12,6 +12,7 @@ from database import (
 from capacity_bar import CapacityBar
 from payment import show_demo_payment_modal
 import icons as ic
+from event_images import CoverImage, load_image
 
 
 def show_event_screen(root, email, tour, is_partner=False):
@@ -36,13 +37,16 @@ def show_event_screen(root, email, tour, is_partner=False):
         else:
             navigate.show_welcome(root, email)
 
-    back_btn = tk.Button(left_frame, text=" Back", font=(t.FONT, 10), bg=t.CARD_BG, fg=t.PRIMARY,
+    back_btn = tk.Button(left_frame, text=f"{ic.emoji('back')} Back", font=(t.FONT, 10), bg=t.CARD_BG, fg=t.PRIMARY,
                          bd=0, relief="flat", cursor="hand2", command=go_back)
     back_img = ic.get_icon("back", size=14, color=t.PRIMARY, master=left_frame)
     if back_img:
         back_btn.config(image=back_img, compound=tk.LEFT)
         back_btn.image = back_img
     back_btn.pack(anchor="w", pady=(0, 15))
+    _event_pic = load_image(tour["id"])
+    if _event_pic is not None:
+        CoverImage(left_frame, _event_pic, height=220).pack(fill=tk.X, pady=(0, 15))
 
     tk.Label(left_frame, text=tour["title"], font=(t.FONT, 22, "bold"), bg=t.CARD_BG, fg=t.TEXT,
              wraplength=600, justify="left").pack(anchor="w", pady=5)
@@ -50,7 +54,7 @@ def show_event_screen(root, email, tour, is_partner=False):
     meta_row = tk.Frame(left_frame, bg=t.CARD_BG)
     meta_row.pack(anchor="w", pady=5)
 
-    star_lbl = tk.Label(meta_row, text=f" {tour['rating']}", font=(t.FONT, 11, "bold"), bg=t.CARD_BG, fg=t.ACCENT)
+    star_lbl = tk.Label(meta_row, text=f"{ic.emoji('star')} {tour['rating']}", font=(t.FONT, 11, "bold"), bg=t.CARD_BG, fg=t.ACCENT)
     star_img = ic.get_icon("star", size=14, color=t.ACCENT, master=left_frame)
     if star_img:
         star_lbl.config(image=star_img, compound=tk.LEFT)
@@ -64,6 +68,8 @@ def show_event_screen(root, email, tour, is_partner=False):
 
     tk.Label(left_frame, text="Event Details", font=(t.FONT, 14, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(anchor="w", pady=(20, 5))
     recurrence_text = tour.get("is_recurring") or "One-Time"
+    if recurrence_text == "One-Time":
+        recurrence_text = "One-Time Event"
     if recurrence_text == "Recurring" and tour.get("recur_day") not in (None, "", "None", "N/A"):
         recurrence_text += f" ({tour['recur_day']})"
 
@@ -81,7 +87,7 @@ def show_event_screen(root, email, tour, is_partner=False):
             lbl = tk.Label(row, image=dimg, bg=t.CARD_BG)
             lbl.image = dimg
             lbl.pack(side=tk.LEFT, padx=(0, 6))
-        tk.Label(row, text=detail_text, font=(t.FONT, 10), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT)
+        tk.Label(row, text=f"{ic.emoji(icon_key)} {detail_text}", font=(t.FONT, 10), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT)
 
     tk.Label(left_frame, text="Capacity and Vehicles", font=(t.FONT, 14, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(anchor="w", pady=(20, 5))
 
@@ -104,7 +110,7 @@ def show_event_screen(root, email, tour, is_partner=False):
             lbl = tk.Label(row, image=truck_img, bg=t.CARD_BG)
             lbl.image = truck_img
             lbl.pack(side=tk.LEFT, padx=(0, 6))
-        tk.Label(row, text=item, font=(t.FONT, 10), bg=t.CARD_BG, fg=t.TEXT_MUTED, wraplength=600, justify="left").pack(side=tk.LEFT)
+        tk.Label(row, text=f"{item}", font=(t.FONT, 10), bg=t.CARD_BG, fg=t.TEXT_MUTED, wraplength=600, justify="left").pack(side=tk.LEFT)
 
     # ----- Right Side: Booking Sidebar with Calendar Widget -----
     right_sidebar = tk.Frame(container, bg=t.FIELD_BG, padx=20, pady=30)
@@ -182,7 +188,7 @@ def show_event_screen(root, email, tour, is_partner=False):
     guests_spin.pack(side=tk.LEFT, padx=8)
 
     if is_partner:
-        partner_lbl = tk.Label(right_sidebar, text=" Extended Capacity (OTA Partner)",
+        partner_lbl = tk.Label(right_sidebar, text=f"{ic.emoji('shield')} Extended Capacity (OTA Partner)",
                  font=(t.FONT, 8, "bold"), bg=t.FIELD_BG, fg=t.PRIMARY)
         shield_img = ic.get_icon("shield", size=13, color=t.PRIMARY, master=right_sidebar)
         if shield_img:
@@ -238,13 +244,13 @@ def show_event_screen(root, email, tour, is_partner=False):
                 add_list_btn.config(state=tk.DISABLED, text="Fully booked")
                 pay_now_btn.config(state=tk.DISABLED, text="Fully booked")
             else:
-                add_list_btn.config(state=tk.NORMAL, text=" Add to Shopping List")
-                pay_now_btn.config(state=tk.NORMAL, text=" Pay Now (Single Event)")
+                add_list_btn.config(state=tk.NORMAL, text=f"{ic.emoji('cart')} Add to List")
+                pay_now_btn.config(state=tk.NORMAL, text=f"Pay Now")
         else:
             if fully_booked:
                 book_btn.config(state=tk.DISABLED, text="Fully booked")
             else:
-                book_btn.config(state=tk.NORMAL, text="Proceed to Booking")
+                book_btn.config(state=tk.NORMAL, text=f"{ic.emoji('ticket')} Proceed to Booking")
 
         return info
 
@@ -311,10 +317,6 @@ def show_event_screen(root, email, tour, is_partner=False):
     tk.Button(header_frame, text="<", font=(t.FONT, 9, "bold"), bg=t.CARD_BG, fg=t.TEXT, bd=0, relief="flat", command=prev_month, cursor="hand2").pack(side=tk.RIGHT, padx=2)
 
     draw_calendar()
-    if cal_state["selected"]:
-        select_date(cal_state["selected"])
-    else:
-        refresh_capacity()
 
     # ----- Booking Action Handlers -----
     if is_partner:
@@ -384,7 +386,7 @@ def show_event_screen(root, email, tour, is_partner=False):
             }]
             show_demo_payment_modal(root, "OTA Booking - Single Event", items, tot, on_pay_success)
 
-        add_list_btn = tk.Button(right_sidebar, text=" Add to Shopping List", font=(t.FONT, 11, "bold"), bd=0, relief="flat",
+        add_list_btn = tk.Button(right_sidebar, text=f"{ic.emoji('cart')} Add to Shopping List", font=(t.FONT, 11, "bold"), bd=0, relief="flat",
                                  bg=t.ACCENT, fg="white", activebackground=t.PRIMARY_HOVER, cursor="hand2", command=handle_add_to_cart)
         plus_img = ic.get_icon("plus", size=16, color="#ffffff", master=right_sidebar)
         if plus_img:
@@ -393,7 +395,7 @@ def show_event_screen(root, email, tour, is_partner=False):
         add_list_btn.pack(fill=tk.X, pady=(15, 6), ipady=8)
         t.add_hover(add_list_btn, t.ACCENT, "#e67e22")
 
-        pay_now_btn = tk.Button(right_sidebar, text=" Pay Now (Single Event)", font=(t.FONT, 10, "bold"), bd=0, relief="flat",
+        pay_now_btn = tk.Button(right_sidebar, text=f"{ic.emoji('payment')} Pay Now (Single Event)", font=(t.FONT, 10, "bold"), bd=0, relief="flat",
                                 bg=t.PRIMARY, fg="white", activebackground=t.PRIMARY_HOVER, cursor="hand2", command=handle_partner_pay_now)
         pay_img = ic.get_icon("payment", size=15, color="#ffffff", master=right_sidebar)
         if pay_img:
@@ -402,7 +404,7 @@ def show_event_screen(root, email, tour, is_partner=False):
         pay_now_btn.pack(fill=tk.X, pady=(0, 6), ipady=7)
         t.add_hover(pay_now_btn, t.PRIMARY, t.PRIMARY_HOVER)
 
-        view_cart_btn = tk.Button(right_sidebar, text=" View Shopping List", font=(t.FONT, 9), bd=0, relief="flat",
+        view_cart_btn = tk.Button(right_sidebar, text=f"{ic.emoji('cart')} View Shopping List", font=(t.FONT, 9), bd=0, relief="flat",
                                   bg=t.CHIP_BG, fg=t.TEXT, cursor="hand2",
                                   command=lambda: (show_partner_welcome(root, email, tab="cart")
                                                    if True else None))
@@ -459,7 +461,14 @@ def show_event_screen(root, email, tour, is_partner=False):
             }]
             show_demo_payment_modal(root, "Customer Tour Booking", items, tot, on_pay_success)
 
-        book_btn = tk.Button(right_sidebar, text="Proceed to Booking", font=(t.FONT, 11, "bold"), bd=0, relief="flat",
+        book_btn = tk.Button(right_sidebar, text=f"{ic.emoji('ticket')} Proceed to Booking", font=(t.FONT, 11, "bold"), bd=0, relief="flat",
                              bg=t.ACCENT, fg="white", activebackground=t.PRIMARY_HOVER, cursor="hand2", command=handle_booking)
         book_btn.pack(fill=tk.X, pady=(20, 0), ipady=10)
         t.add_hover(book_btn, t.ACCENT, "#e67e22")
+
+    # Initial capacity/selection must run after the booking buttons exist,
+    # because refresh_capacity() updates them.
+    if cal_state["selected"]:
+        select_date(cal_state["selected"])
+    else:
+        refresh_capacity()

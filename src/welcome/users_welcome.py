@@ -32,14 +32,14 @@ class BaseWelcomeScreen:
         self.nav_bar.pack_propagate(False)
 
         # Header branding
-        tk.Label(self.nav_bar, text="Rihla Portal", bg="#2c3e50", fg="white", font=(t.FONT, 16, "bold")).pack(pady=(20, 5))
+        tk.Label(self.nav_bar, text=f"Rihla Portal", bg="#2c3e50", fg="white", font=(t.FONT, 16, "bold")).pack(pady=(20, 5))
         tk.Label(self.nav_bar, text=f"[{self.role_name}]", bg="#2c3e50", fg="#3498db", font=(t.FONT, 10, "italic")).pack(pady=(0, 15))
 
         # Bottom frame: Settings directly above Log Out for all users
         bottom_frame = tk.Frame(self.nav_bar, bg="#2c3e50")
         bottom_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(0, 20))
 
-        settings_btn = tk.Button(bottom_frame, text=" Settings", width=16, relief="flat", bg="#34495e", fg="white",
+        settings_btn = tk.Button(bottom_frame, text=f"Settings", width=20, relief="flat", bg="#34495e", fg="white",
                                  font=(t.FONT, 9, "bold"), cursor="hand2", command=self.open_settings_modal)
         settings_btn.pack(pady=(0, 8))
         settings_img = ic.get_icon("settings", size=14, color="#ffffff", master=self.nav_bar)
@@ -48,7 +48,7 @@ class BaseWelcomeScreen:
             settings_btn.image = settings_img
         t.add_hover(settings_btn, "#34495e", "#2c3e50")
 
-        logout_btn = tk.Button(bottom_frame, text=" Log Out", width=16, relief="raised", bg="#e74c3c", fg="white",
+        logout_btn = tk.Button(bottom_frame, text=f"Log Out", width=20, relief="raised", bg="#e74c3c", fg="white",
                                font=(t.FONT, 9, "bold"), cursor="hand2", command=lambda: navigate.show_login(self.root))
         logout_btn.pack()
         logout_img = ic.get_icon("logout", size=14, color="#ffffff", master=self.nav_bar)
@@ -61,8 +61,10 @@ class BaseWelcomeScreen:
         self.nav_buttons_container = tk.Frame(self.nav_bar, bg="#2c3e50")
         self.nav_buttons_container.pack(fill=tk.BOTH, expand=True)
 
-    def add_nav_button(self, text, command=None):
-        btn = tk.Button(self.nav_buttons_container, text=text, width=16, relief="flat", bg="#34495e", fg="white",
+    def add_nav_button(self, text, command=None, icon=None):
+        if icon:
+            text = f"{ic.emoji(icon)} {text}"
+        btn = tk.Button(self.nav_buttons_container, text=text, width=20, relief="flat", bg="#34495e", fg="white",
                         font=(t.FONT, 9, "bold"), cursor="hand2", command=command)
         btn.pack(pady=4)
         t.add_hover(btn, "#34495e", t.PRIMARY)
@@ -92,7 +94,7 @@ class BaseWelcomeScreen:
             now = datetime.now()
             date_str = now.strftime("%a, %b %d, %Y")
             time_str = now.strftime("%I:%M:%S %p")
-            self.datetime_label.config(text=f"{date_str}  |  {time_str}")
+            self.datetime_label.config(text=f"{ic.emoji('clock')} | {date_str} {time_str}")
             self._clock_timer = self.root.after(1000, update_clock)
 
         update_clock()

@@ -57,6 +57,15 @@ class CapacityBar(tk.Frame):
 
         fill_w = int(self.bar_width * ratio)
 
+        # "Filling up" only counts when some seats are really booked, not just because the event is small.
+        has_bookings = total is not None and total > 0 and remaining_val < total
+        if remaining_val <= 0:
+            bar_color = "#e74c3c"
+        elif has_bookings and (remaining_val <= 5 or ratio <= 0.25):
+            bar_color = "#e67e22"
+        else:
+            bar_color = t.PRIMARY
+
         # White background (empty state)
         self.canvas.create_rectangle(
             0, 0, self.bar_width, self.bar_height,
@@ -67,7 +76,7 @@ class CapacityBar(tk.Frame):
         if fill_w > 0:
             self.canvas.create_rectangle(
                 0, 0, fill_w, self.bar_height,
-                fill=t.PRIMARY, outline=""
+                fill=bar_color, outline=""
             )
 
         # Clean border around the bar
@@ -76,19 +85,20 @@ class CapacityBar(tk.Frame):
             outline=t.PRIMARY, width=1
         )
 
-        # Simple text next to it: N remaining
-        # If N is 5 or less, add additional text: "Hurry up!"
+        # Text next to the bar: "N of TOTAL remaining". "Hurry up!" only when it is really filling up.
+        total_val = total if (total is not None and total > 0) else remaining_val
+        count_text = f"{remaining_val} of {total_val} remaining"
         if suffix:
-            text = f"{remaining_val} remaining {suffix}"
+            text = f"{count_text} {suffix}"
             fg = t.TEXT_MUTED
         elif remaining_val <= 0:
             text = "0 remaining (Fully booked)"
             fg = "#e74c3c"
-        elif remaining_val <= 5:
-            text = f"{remaining_val} remaining - Hurry up!"
+        elif has_bookings and (remaining_val <= 5 or ratio <= 0.25):
+            text = f"{count_text} - Hurry up!"
             fg = "#e67e22"
         else:
-            text = f"{remaining_val} remaining"
+            text = count_text
             fg = t.TEXT
 
         self.label.config(text=text, fg=fg)

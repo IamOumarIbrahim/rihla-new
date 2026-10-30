@@ -10,6 +10,7 @@ from database import (
 from capacity_bar import CapacityBar
 import theme as t
 import icons as ic
+import event_images
 
 
 def _parse_price(value):
@@ -41,9 +42,9 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
         super().__init__(root, email, "Customer")
         self.root = root
 
-        self.add_nav_button("My Bookings", self.build_bookings_content)
-        self.add_nav_button("Explore Tours", lambda: self.apply_all_filters())
-        self.add_nav_button("Support", self.build_support_content)
+        self.add_nav_button("My Bookings", self.build_bookings_content, icon="ticket")
+        self.add_nav_button("Explore Tours", lambda: self.apply_all_filters(), icon="compass")
+        self.add_nav_button("Support", self.build_support_content, icon="chat")
 
         # Load real vendor-posted events with full dynamic date and time details from database
         db_events = get_all_events()
@@ -88,12 +89,6 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
         search_frame = tk.Frame(self.scrollable_frame, bg=t.PAGE_BG)
         search_frame.pack(fill=tk.X, padx=30, pady=10)
 
-        search_icon_lbl = tk.Label(search_frame, bg=t.PAGE_BG)
-        search_img = ic.get_icon("search", size=16, color=t.TEXT_MUTED, master=search_frame)
-        if search_img:
-            search_icon_lbl.config(image=search_img)
-            search_icon_lbl.image = search_img
-        search_icon_lbl.pack(side=tk.LEFT, padx=(0, 5))
 
         self.search_entry = tk.Entry(search_frame, font=(t.FONT, 11))
         self.search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5, ipady=5)
@@ -104,7 +99,7 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
         search_btn.pack(side=tk.LEFT, padx=5, ipadx=10, ipady=3)
         t.add_hover(search_btn, t.ACCENT, "#e67e22")
 
-        filter_btn = tk.Button(search_frame, text=" Filter", bg=t.DARK_SOFT, fg="white", font=(t.FONT, 10, "bold"), relief="flat", command=self.open_filter_modal)
+        filter_btn = tk.Button(search_frame, text=f"Filter", bg=t.DARK_SOFT, fg="white", font=(t.FONT, 10, "bold"), relief="flat", command=self.open_filter_modal)
         filter_img = ic.get_icon("filter", size=14, color="#ffffff", master=search_frame)
         if filter_img:
             filter_btn.config(image=filter_img, compound=tk.LEFT)
@@ -124,9 +119,6 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
             btn_fg = "white" if is_active else t.TEXT
             tk.Button(cat_frame, text=cat, bg=btn_bg, fg=btn_fg, font=(t.FONT, 9, "bold" if is_active else "normal"), relief="flat",
                       command=lambda c=cat: self.filter_by_category(c)).pack(side=tk.LEFT, padx=4, ipady=4, ipadx=8)
-
-        tk.Label(self.scrollable_frame, text=f"Featured Vendor Excursions ({len(tours_to_show)} Available)", font=(t.FONT, 14, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 5))
-
         if not tours_to_show:
             tk.Label(self.scrollable_frame, text="No events posted by vendors match your criteria.", font=(t.FONT, 10, "italic"), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=10)
             return
@@ -140,14 +132,15 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
             row = i // 2
             col = i % 2
 
-            card = tk.Frame(grid_container, bg=t.CARD_BG, bd=1, relief="solid", highlightbackground=t.BORDER)
-            card.grid(row=row, column=col, sticky="nsew", padx=8, pady=8)
+            outer = tk.Frame(grid_container, bg=t.CARD_BG, bd=1, relief="solid", highlightbackground=t.BORDER)
+            outer.grid(row=row, column=col, sticky="nsew", padx=8, pady=8)
+            card = event_images.build_card_shell(outer, tour["id"])
 
             top_row = tk.Frame(card, bg=t.CARD_BG)
             top_row.pack(fill=tk.X, padx=15, pady=10)
 
             # Star icon for rating
-            star_lbl = tk.Label(top_row, text=f" {tour['rating']}", font=(t.FONT, 10, "bold"), bg=t.CARD_BG, fg=t.ACCENT)
+            star_lbl = tk.Label(top_row, text=f"{ic.emoji('star')} {tour['rating']}", font=(t.FONT, 10, "bold"), bg=t.CARD_BG, fg=t.ACCENT)
             star_img = ic.get_icon("star", size=14, color=t.ACCENT, master=card)
             if star_img:
                 star_lbl.config(image=star_img, compound=tk.LEFT)
@@ -168,17 +161,15 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
                 lbl = tk.Label(sched_frame, image=pin_img, bg=t.CARD_BG)
                 lbl.image = pin_img
                 lbl.pack(side=tk.LEFT)
-            tk.Label(sched_frame, text=f" {tour['venue_name']}", font=(t.FONT, 8, "italic"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT)
+            tk.Label(sched_frame, text=f"{tour['venue_name']}", font=(t.FONT, 8), bg=t.CARD_BG, fg="#000000").pack(side=tk.LEFT)
 
             recur_img = ic.get_icon("repeat", size=12, color=t.TEXT_MUTED, master=card)
             if recur_img:
                 lbl2 = tk.Label(sched_frame, image=recur_img, bg=t.CARD_BG)
                 lbl2.image = recur_img
                 lbl2.pack(side=tk.LEFT, padx=(6, 0))
-            recur_text = tour['is_recurring']
-            if tour['is_recurring'] == "Recurring" and tour.get('recur_day') and tour['recur_day'] != "None":
-                recur_text += f" ({tour['recur_day']})"
-            tk.Label(sched_frame, text=f" {recur_text}", font=(t.FONT, 8, "italic"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT)
+            recur_text = "One-Time Event" if tour['is_recurring'] == "One-Time" else tour['is_recurring']
+            tk.Label(sched_frame, text=f"| {recur_text}", font=(t.FONT, 8), bg=t.CARD_BG, fg="#000000").pack(side=tk.LEFT)
 
             # Live capacity bar
             target_date = _next_date_for_tour(tour)
@@ -192,8 +183,7 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
                 ul = tk.Label(cap_box, image=users_img, bg=t.CARD_BG)
                 ul.image = users_img
                 ul.pack(side=tk.LEFT, padx=(0, 4))
-            else:
-                tk.Label(cap_box, text="Capacity:", font=(t.FONT, 8, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT, padx=(0, 4))
+            
             CapacityBar(cap_box, remaining=remaining_val, total=cap_info['total'], width=90, height=12, bg=t.CARD_BG).pack(side=tk.LEFT)
 
             tk.Label(card, text=tour["desc"], font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED, wraplength=280, justify="left").pack(anchor="w", padx=15, pady=6)
@@ -207,13 +197,13 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
         for widget in self.scrollable_frame.winfo_children():
             widget.destroy()
 
-        tk.Label(self.scrollable_frame, text="My Bookings", font=(t.FONT, 22, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 5))
+        tk.Label(self.scrollable_frame, text=f"My Bookings", font=(t.FONT, 22, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 5))
         tk.Label(self.scrollable_frame, text="Show your ticket code at the entrance. Each code can be used only once.", font=(t.FONT, 11), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=(0, 10))
 
         bookings = get_bookings_by_customer(self.email)
         if not bookings:
             tk.Label(self.scrollable_frame, text="You have no bookings yet.", font=(t.FONT, 11, "italic"), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=10)
-            explore_btn = tk.Button(self.scrollable_frame, text="Explore Tours", font=(t.FONT, 10, "bold"), bg=t.PRIMARY, fg="white", relief="flat", command=lambda: self.apply_all_filters())
+            explore_btn = tk.Button(self.scrollable_frame, text=f"Explore Tours", font=(t.FONT, 10, "bold"), bg=t.PRIMARY, fg="white", relief="flat", command=lambda: self.apply_all_filters())
             explore_btn.pack(anchor="w", padx=30, ipadx=15, ipady=6)
             t.add_hover(explore_btn, t.PRIMARY, t.PRIMARY_HOVER)
             return
@@ -238,14 +228,14 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
             info = f"{when} at {booking['event_time'] or 'TBA'}  |  {booking['venue_name'] or 'Venue to be announced'}  |  {booking['guests']} guest(s)"
             tk.Label(card, text=info, font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=15, pady=2)
 
-            tk.Label(card, text="TICKET CODE", font=(t.FONT, 8, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=15, pady=(8, 0))
+            tk.Label(card, text=f"TICKET CODE", font=(t.FONT, 8, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=15, pady=(8, 0))
             code_color = t.TEXT if booking["status"] == "Confirmed" else t.TEXT_MUTED
             tk.Label(card, text=format_ticket_code(booking["ticket_code"]), font=("Consolas", 16, "bold"), bg=t.CARD_BG, fg=code_color).pack(anchor="w", padx=15, pady=(0, 5))
 
             btn_row = tk.Frame(card, bg=t.CARD_BG)
             btn_row.pack(anchor="w", padx=15, pady=(5, 5))
 
-            copy_btn = tk.Button(btn_row, text=" Copy code", bg=t.CHIP_BG, fg=t.TEXT, font=(t.FONT, 9, "bold"), relief="flat")
+            copy_btn = tk.Button(btn_row, text=f"Copy code", bg=t.CHIP_BG, fg=t.TEXT, font=(t.FONT, 9, "bold"), relief="flat")
             copy_img = ic.get_icon("copy", size=13, color=t.TEXT, master=btn_row)
             if copy_img:
                 copy_btn.config(image=copy_img, compound=tk.LEFT)
@@ -255,7 +245,7 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
             t.add_hover(copy_btn, t.CHIP_BG, t.CHIP_HOVER)
 
             if booking["can_cancel"]:
-                cancel_btn = tk.Button(btn_row, text=" Cancel", bg="#e74c3c", fg="white", font=(t.FONT, 9, "bold"), relief="flat",
+                cancel_btn = tk.Button(btn_row, text=f"Cancel", bg="#e74c3c", fg="white", font=(t.FONT, 9, "bold"), relief="flat",
                                        command=lambda b=booking: self.handle_cancel_booking(b))
                 x_img = ic.get_icon("close", size=13, color="#ffffff", master=btn_row)
                 if x_img:
@@ -288,7 +278,7 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
             else:
                 messagebox.showerror("Cannot send", result["message"])
 
-        send_btn = tk.Button(form, text="Send message", font=(t.FONT, 10, "bold"), bg=t.PRIMARY, fg="white", relief="flat", command=send)
+        send_btn = tk.Button(form, text=f"Send message", font=(t.FONT, 10, "bold"), bg=t.PRIMARY, fg="white", relief="flat", command=send)
         send_btn.pack(anchor="w", padx=15, pady=(10, 5), ipadx=15, ipady=6)
         t.add_hover(send_btn, t.PRIMARY, t.PRIMARY_HOVER)
 
@@ -306,7 +296,7 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
     def copy_ticket_code(self, code, button):
         self.root.clipboard_clear()
         self.root.clipboard_append(code)
-        button.config(text="Copied!")
+        button.config(text=f"Copied!")
 
     def handle_cancel_booking(self, booking):
         if not messagebox.askyesno("Cancel booking", f"Cancel your booking for {booking['event_title']}?\n\nThe ticket code will stop working."):

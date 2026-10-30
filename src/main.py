@@ -1,11 +1,11 @@
+import socket
+socket.setdefaulttimeout(3)
 import tkinter as tk
 
-from database import init_db
 import navigate
 
 
 def main():
-    init_db()
 
     root = tk.Tk()
     root.title("Rihla")

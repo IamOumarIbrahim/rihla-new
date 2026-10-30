@@ -5,6 +5,7 @@ Serves on http://localhost:5000
 All data lives in server/users.db (the single source of truth).
 """
 
+import base64
 import os
 import sys
 
@@ -174,12 +175,18 @@ def get_events_today():
 def create_event():
     body = request.get_json(silent=True) or {}
     try:
+        image_bytes = _decode_image(body.get("image_b64"))
         events.create_event(
             body["title"], body.get("category"), body.get("price"),
             body.get("description"), body.get("vendor_email"), body.get("venue_id"),
             body.get("event_datetime"), body.get("is_recurring"), body.get("recur_day"),
             body.get("recur_time"), body.get("capacity")
         )
+        if image_bytes:
+            with core._connect() as conn:
+                new_id = conn.execute("SELECT MAX(id) FROM events").fetchone()[0]
+            if new_id:
+                _write_event_image(new_id, image_bytes)
         return _ok({"message": "Event created."})
     except Exception as e:
         return _err(str(e))
@@ -189,12 +196,17 @@ def create_event():
 def update_event(event_id):
     body = request.get_json(silent=True) or {}
     try:
+        image_bytes = _decode_image(body.get("image_b64"))
         events.update_event(
             event_id, body["title"], body.get("category"), body.get("price"),
             body.get("description"), body.get("venue_id"), body.get("event_datetime"),
             body.get("is_recurring"), body.get("recur_day"), body.get("recur_time"),
             body.get("capacity")
         )
+        if body.get("remove_image"):
+            _delete_event_image(event_id)
+        elif image_bytes:
+            _write_event_image(event_id, image_bytes)
         return _ok({"message": "Event updated."})
     except Exception as e:
         return _err(str(e))
@@ -203,6 +215,7 @@ def update_event(event_id):
 @app.route("/api/events/<int:event_id>", methods=["DELETE"])
 def delete_event(event_id):
     events.delete_event(event_id)
+    _delete_event_image(event_id)
     return _ok({"message": "Deleted."})
 
 
@@ -415,6 +428,79 @@ def checkout_cart(partner_email):
     if result["success"]:
         return _ok(result)
     return _err(result["message"])
+
+
+# -----------------------------------------------------------------------
+# Dispatch - vehicles assigned to one event
+# -----------------------------------------------------------------------
+
+@app.route("/api/dispatch/<int:event_id>/vehicles")
+def get_assigned_vehicles_for_event(event_id):
+    with core._connect() as conn:
+        rows = conn.execute('''
+            SELECT v.id, v.license_number, v.vehicle_type, v.location, v.status, v.auto_reassign_recurring
+            FROM event_vehicles ev
+            JOIN vehicles v ON ev.vehicle_id = v.id
+            WHERE ev.event_id = ? AND ev.status = 'Assigned'
+        ''', (event_id,)).fetchall()
+    vehicles = [
+        {"id": r[0], "license_number": r[1], "vehicle_type": r[2],
+         "location": r[3], "status": r[4], "auto_reassign_recurring": r[5]}
+        for r in rows
+    ]
+    return _ok({"vehicles": vehicles})
+
+
+# -----------------------------------------------------------------------
+# Event pictures (files in server/event_images/<event id>.jpg)
+# -----------------------------------------------------------------------
+
+IMAGE_DIR = os.path.join(_SERVER_DIR, "event_images")
+os.makedirs(IMAGE_DIR, exist_ok=True)
+MAX_IMAGE_BYTES = 4 * 1024 * 1024
+
+
+def _image_path(event_id):
+    return os.path.join(IMAGE_DIR, f"{int(event_id)}.jpg")
+
+
+def _decode_image(b64_text):
+    """Returns JPEG bytes, or None when no picture was sent. Raises ValueError for bad data."""
+    if not b64_text:
+        return None
+    try:
+        data = base64.b64decode(b64_text, validate=True)
+    except Exception:
+        raise ValueError("The picture could not be read.")
+    if len(data) > MAX_IMAGE_BYTES:
+        raise ValueError("The picture is too large (maximum 4 MB).")
+    if not data.startswith(b"\xff\xd8"):
+        raise ValueError("The picture must be a JPEG.")
+    return data
+
+
+def _write_event_image(event_id, data):
+    with open(_image_path(event_id), "wb") as f:
+        f.write(data)
+
+
+def _delete_event_image(event_id):
+    try:
+        os.remove(_image_path(event_id))
+    except FileNotFoundError:
+        pass
+
+
+@app.route("/api/events/<int:event_id>/image")
+def get_event_image(event_id):
+    path = _image_path(event_id)
+    if not os.path.exists(path):
+        return _err("No picture.", 404)
+    with open(path, "rb") as f:
+        data = f.read()
+    resp = app.response_class(data, mimetype="image/jpeg")
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 
 # -----------------------------------------------------------------------

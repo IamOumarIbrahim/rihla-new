@@ -12,6 +12,7 @@ from capacity_bar import CapacityBar
 from payment import show_demo_payment_modal
 import theme as t
 import icons as ic
+import event_images
 
 
 def _next_date_for_tour(tour):
@@ -45,9 +46,9 @@ class PartnerWelcomeScreen(BaseWelcomeScreen):
         self.load_tours()
 
         # Nav bar items (No Partner Terms page)
-        self.explore_btn = self.add_nav_button("Explore Tours", self.build_explore_content)
+        self.explore_btn = self.add_nav_button("Explore Tours", self.build_explore_content, icon="compass")
         self.cart_btn = self.add_nav_button(self._cart_button_label(), self.build_shopping_list_content)
-        self.bookings_btn = self.add_nav_button("Partner Bookings", self.build_bookings_content)
+        self.bookings_btn = self.add_nav_button("Partner Bookings", self.build_bookings_content, icon="handshake")
 
         if tab == "cart":
             self.build_shopping_list_content()
@@ -79,7 +80,7 @@ class PartnerWelcomeScreen(BaseWelcomeScreen):
 
     def _cart_button_label(self):
         count = get_cart_count(self.email)
-        return f"Shopping List ({count})" if count > 0 else "Shopping List"
+        return f"Shopping List ({count})" if count > 0 else f"Shopping List"
 
     def refresh_cart_button(self):
         self.cart_btn.config(text=self._cart_button_label())
@@ -99,27 +100,19 @@ class PartnerWelcomeScreen(BaseWelcomeScreen):
         banner = tk.Frame(self.scrollable_frame, bg=t.DARK_SOFT, padx=25, pady=15)
         banner.pack(fill=tk.X, padx=30, pady=(20, 10))
 
-        globe_lbl = tk.Label(banner, text=" OTA Partner Booking Portal", font=(t.FONT, 15, "bold"),
+        globe_lbl = tk.Label(banner, text=f"OTA Partner Booking Portal", font=(t.FONT, 15, "bold"),
                              bg=t.DARK_SOFT, fg="white")
         globe_img = ic.get_icon("globe", size=18, color="#ffffff", master=banner)
         if globe_img:
             globe_lbl.config(image=globe_img, compound=tk.LEFT)
             globe_lbl.image = globe_img
         globe_lbl.pack(anchor="w")
-        tk.Label(banner,
-                 text="Book extended capacity for multiple clients. Add events to your shopping list for singular payment.",
-                 font=(t.FONT, 9), bg=t.DARK_SOFT, fg="#bdc3c7").pack(anchor="w", pady=(3, 0))
+
 
         # Search Bar
         search_frame = tk.Frame(self.scrollable_frame, bg=t.PAGE_BG)
         search_frame.pack(fill=tk.X, padx=30, pady=10)
 
-        search_icon_lbl = tk.Label(search_frame, bg=t.PAGE_BG)
-        search_img = ic.get_icon("search", size=16, color=t.TEXT_MUTED, master=search_frame)
-        if search_img:
-            search_icon_lbl.config(image=search_img)
-            search_icon_lbl.image = search_img
-        search_icon_lbl.pack(side=tk.LEFT, padx=(0, 5))
 
         self.search_entry = tk.Entry(search_frame, font=(t.FONT, 11))
         self.search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5, ipady=5)
@@ -162,13 +155,14 @@ class PartnerWelcomeScreen(BaseWelcomeScreen):
             row = i // 2
             col = i % 2
 
-            card = tk.Frame(grid_container, bg=t.CARD_BG, bd=1, relief="solid", highlightbackground=t.BORDER)
-            card.grid(row=row, column=col, sticky="nsew", padx=8, pady=8)
+            outer = tk.Frame(grid_container, bg=t.CARD_BG, bd=1, relief="solid", highlightbackground=t.BORDER)
+            outer.grid(row=row, column=col, sticky="nsew", padx=8, pady=8)
+            card = event_images.build_card_shell(outer, tour["id"])
 
             top_row = tk.Frame(card, bg=t.CARD_BG)
             top_row.pack(fill=tk.X, padx=15, pady=10)
 
-            star_lbl = tk.Label(top_row, text=f" {tour['rating']}", font=(t.FONT, 10, "bold"), bg=t.CARD_BG, fg=t.ACCENT)
+            star_lbl = tk.Label(top_row, text=f"{ic.emoji('star')} {tour['rating']}", font=(t.FONT, 10, "bold"), bg=t.CARD_BG, fg=t.ACCENT)
             star_img = ic.get_icon("star", size=14, color=t.ACCENT, master=card)
             if star_img:
                 star_lbl.config(image=star_img, compound=tk.LEFT)
@@ -189,17 +183,17 @@ class PartnerWelcomeScreen(BaseWelcomeScreen):
                 lbl = tk.Label(sched_frame, image=pin_img, bg=t.CARD_BG)
                 lbl.image = pin_img
                 lbl.pack(side=tk.LEFT)
-            tk.Label(sched_frame, text=f" {tour['venue_name']}", font=(t.FONT, 8, "italic"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT)
+            tk.Label(sched_frame, text=f"{tour['venue_name']}", font=(t.FONT, 8), bg=t.CARD_BG, fg="#000000").pack(side=tk.LEFT)
 
             recur_img = ic.get_icon("repeat", size=12, color=t.TEXT_MUTED, master=card)
             if recur_img:
                 lbl2 = tk.Label(sched_frame, image=recur_img, bg=t.CARD_BG)
                 lbl2.image = recur_img
                 lbl2.pack(side=tk.LEFT, padx=(6, 0))
-            recur_text = tour['is_recurring']
+            recur_text = "One-Time Event" if tour['is_recurring'] == "One-Time" else tour['is_recurring']
             if tour['is_recurring'] == "Recurring" and tour.get('recur_day') and tour['recur_day'] != "None":
                 recur_text += f" ({tour['recur_day']})"
-            tk.Label(sched_frame, text=f" {recur_text}", font=(t.FONT, 8, "italic"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT)
+            tk.Label(sched_frame, text=f"| {recur_text}", font=(t.FONT, 8), bg=t.CARD_BG, fg="#000000").pack(side=tk.LEFT)
 
             # Live dynamic capacity for the upcoming occurrence
             target_date = _next_date_for_tour(tour)
@@ -214,7 +208,7 @@ class PartnerWelcomeScreen(BaseWelcomeScreen):
                 ul.image = users_img
                 ul.pack(side=tk.LEFT, padx=(0, 4))
             else:
-                tk.Label(cap_box, text="Capacity:", font=(t.FONT, 8, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT, padx=(0, 4))
+                tk.Label(cap_box, text=f"Capacity:", font=(t.FONT, 8, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT, padx=(0, 4))
             CapacityBar(cap_box, remaining=remaining_val, total=cap_info['total'], width=90, height=12, bg=t.CARD_BG).pack(side=tk.LEFT)
 
             tk.Label(card, text=tour["desc"], font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED,
@@ -223,7 +217,7 @@ class PartnerWelcomeScreen(BaseWelcomeScreen):
             btn_box = tk.Frame(card, bg=t.CARD_BG)
             btn_box.pack(anchor="w", padx=15, pady=(5, 15))
 
-            details_btn = tk.Button(btn_box, text=" Book / Add to List", bg=t.PRIMARY, fg="white", font=(t.FONT, 10, "bold"),
+            details_btn = tk.Button(btn_box, text=f"Add to List", bg=t.PRIMARY, fg="white", font=(t.FONT, 10, "bold"),
                                     relief="flat", cursor="hand2", command=lambda tr=tour: show_event_screen(self.root, self.email, tr, is_partner=True))
             cart_img = ic.get_icon("cart", size=14, color="#ffffff", master=btn_box)
             if cart_img:
@@ -269,7 +263,7 @@ class PartnerWelcomeScreen(BaseWelcomeScreen):
             lbl = tk.Label(header_row, image=cart_hdr_img, bg=t.PAGE_BG)
             lbl.image = cart_hdr_img
             lbl.pack(side=tk.LEFT, padx=(0, 8))
-        tk.Label(header_row, text="OTA Partner Shopping List", font=(t.FONT, 20, "bold"),
+        tk.Label(header_row, text=f"{ic.emoji('cart')} OTA Partner Booking List", font=(t.FONT, 20, "bold"),
                  bg=t.PAGE_BG, fg=t.TEXT).pack(side=tk.LEFT)
 
         tk.Label(self.scrollable_frame,
@@ -287,7 +281,7 @@ class PartnerWelcomeScreen(BaseWelcomeScreen):
             tk.Label(empty_box, text="Browse available excursions and add them to your list with your custom client groups.",
                      font=(t.FONT, 10), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", pady=(5, 15))
 
-            exp_btn = tk.Button(empty_box, text="Browse Tours", font=(t.FONT, 10, "bold"), bg=t.PRIMARY,
+            exp_btn = tk.Button(empty_box, text=f"Browse Tours", font=(t.FONT, 10, "bold"), bg=t.PRIMARY,
                                 fg="white", relief="flat", cursor="hand2", command=self.build_explore_content)
             exp_btn.pack(anchor="w", ipadx=15, ipady=6)
             t.add_hover(exp_btn, t.PRIMARY, t.PRIMARY_HOVER)
@@ -332,7 +326,7 @@ class PartnerWelcomeScreen(BaseWelcomeScreen):
 
             show_demo_payment_modal(self.root, f"OTA Partner Batch Payment ({len(items)} Events)", modal_items, grand_total, on_payment_success)
 
-        pay_all_btn = tk.Button(summary_bar, text=f" Pay All ({grand_total} AED)",
+        pay_all_btn = tk.Button(summary_bar, text=f"Pay All ({grand_total} AED)",
                                 font=(t.FONT, 11, "bold"), bg=t.ACCENT, fg="white", relief="flat",
                                 cursor="hand2", command=do_singular_payment)
         payment_img = ic.get_icon("payment", size=16, color="#ffffff", master=summary_bar)
@@ -364,7 +358,7 @@ class PartnerWelcomeScreen(BaseWelcomeScreen):
                 cal_lbl.config(image=cal_img)
                 cal_lbl.image = cal_img
             cal_lbl.pack(side=tk.LEFT)
-            tk.Label(row2, text=f" {it['booking_date']}  ", font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT)
+            tk.Label(row2, text=f"{it['booking_date']} | ", font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT)
 
             users_lbl = tk.Label(row2, bg=t.CARD_BG)
             u_img = ic.get_icon("users", size=12, color=t.TEXT_MUTED, master=card)
@@ -372,14 +366,14 @@ class PartnerWelcomeScreen(BaseWelcomeScreen):
                 users_lbl.config(image=u_img)
                 users_lbl.image = u_img
             users_lbl.pack(side=tk.LEFT)
-            tk.Label(row2, text=f" {it['guests']} guests  ", font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT)
+            tk.Label(row2, text=f"{it['guests']} guests ", font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT)
 
             tk.Label(row2, text=f"{it['unit_price']} AED/guest  |  {group_str}", font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT)
 
             def make_remove_cmd(item_id):
                 return lambda: self.handle_remove_cart_item(item_id)
 
-            remove_btn = tk.Button(row2, text=" Remove", font=(t.FONT, 9), bg=t.CHIP_BG, fg="#e74c3c",
+            remove_btn = tk.Button(row2, text=f"{ic.emoji('close')} Remove", font=(t.FONT, 9), bg=t.CHIP_BG, fg="#e74c3c",
                                    relief="flat", cursor="hand2", command=make_remove_cmd(it["id"]))
             x_img = ic.get_icon("close", size=12, color="#e74c3c", master=row2)
             if x_img:
@@ -388,8 +382,8 @@ class PartnerWelcomeScreen(BaseWelcomeScreen):
             remove_btn.pack(side=tk.RIGHT, padx=(10, 0), ipadx=6)
             t.add_hover(remove_btn, t.CHIP_BG, "#fcdbd9")
 
-        clear_btn = tk.Button(cart_container, text=" Clear Entire List", font=(t.FONT, 9), bg=t.CHIP_BG,
-                              fg=t.TEXT_MUTED, relief="flat", cursor="hand2", command=self.handle_clear_cart)
+        clear_btn = tk.Button(cart_container, text=f"{ic.emoji('close')} Clear Entire List", font=(t.FONT, 9), bg=t.CHIP_BG,
+                              fg="#e74c3c", relief="flat", cursor="hand2", command=self.handle_clear_cart)
         trash_img = ic.get_icon("trash", size=13, color=t.TEXT_MUTED, master=cart_container)
         if trash_img:
             clear_btn.config(image=trash_img, compound=tk.LEFT)
@@ -422,7 +416,7 @@ class PartnerWelcomeScreen(BaseWelcomeScreen):
             lbl = tk.Label(header_row, image=list_img, bg=t.PAGE_BG)
             lbl.image = list_img
             lbl.pack(side=tk.LEFT, padx=(0, 8))
-        tk.Label(header_row, text="Partner Bookings", font=(t.FONT, 20, "bold"),
+        tk.Label(header_row, text=f"Partner Bookings", font=(t.FONT, 20, "bold"),
                  bg=t.PAGE_BG, fg=t.TEXT).pack(side=tk.LEFT)
 
         tk.Label(self.scrollable_frame,
@@ -433,7 +427,7 @@ class PartnerWelcomeScreen(BaseWelcomeScreen):
         if not bookings:
             tk.Label(self.scrollable_frame, text="You have no bookings yet.", font=(t.FONT, 11, "italic"),
                      bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=10)
-            exp_btn = tk.Button(self.scrollable_frame, text="Explore Tours", font=(t.FONT, 10, "bold"),
+            exp_btn = tk.Button(self.scrollable_frame, text=f"Explore Tours", font=(t.FONT, 10, "bold"),
                                 bg=t.PRIMARY, fg="white", relief="flat", command=self.build_explore_content)
             exp_btn.pack(anchor="w", padx=30, ipadx=15, ipady=6)
             t.add_hover(exp_btn, t.PRIMARY, t.PRIMARY_HOVER)
@@ -465,7 +459,7 @@ class PartnerWelcomeScreen(BaseWelcomeScreen):
 
             info_row = tk.Frame(card, bg=t.CARD_BG)
             info_row.pack(anchor="w", padx=15, pady=2)
-            tk.Label(info_row, text=f"{when} at {b['event_time'] or 'TBA'}  |  {b['venue_name'] or 'Venue TBA'}",
+            tk.Label(info_row, text=f"{when} at {b['event_time'] or 'TBA'} | {b['venue_name'] or 'Venue TBA'}",
                      font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT)
             u_img2 = ic.get_icon("users", size=12, color=t.TEXT_MUTED, master=card)
             if u_img2:
@@ -474,7 +468,7 @@ class PartnerWelcomeScreen(BaseWelcomeScreen):
                 ul2.pack(side=tk.LEFT, padx=(8, 2))
             tk.Label(info_row, text=f"{b['guests']} guest(s) (OTA Extended)", font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT)
 
-            tk.Label(card, text="TICKET CODE (GIVE TO CUSTOMER)", font=(t.FONT, 8, "bold"),
+            tk.Label(card, text=f"TICKET CODE (GIVE TO CUSTOMER)", font=(t.FONT, 8, "bold"),
                      bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=15, pady=(8, 0))
             code_color = t.TEXT if b["status"] == "Confirmed" else t.TEXT_MUTED
             tk.Label(card, text=format_ticket_code(b["ticket_code"]), font=("Consolas", 15, "bold"),
@@ -483,7 +477,7 @@ class PartnerWelcomeScreen(BaseWelcomeScreen):
             btn_row = tk.Frame(card, bg=t.CARD_BG)
             btn_row.pack(anchor="w", padx=15, pady=(5, 5))
 
-            copy_btn = tk.Button(btn_row, text=" Copy Ticket Code", bg=t.CHIP_BG, fg=t.TEXT, font=(t.FONT, 9, "bold"), relief="flat")
+            copy_btn = tk.Button(btn_row, text=f"Copy Ticket Code", bg=t.CHIP_BG, fg=t.TEXT, font=(t.FONT, 9, "bold"), relief="flat")
             copy_img = ic.get_icon("copy", size=13, color=t.TEXT, master=btn_row)
             if copy_img:
                 copy_btn.config(image=copy_img, compound=tk.LEFT)
@@ -493,7 +487,7 @@ class PartnerWelcomeScreen(BaseWelcomeScreen):
             t.add_hover(copy_btn, t.CHIP_BG, t.CHIP_HOVER)
 
             if b["can_cancel"]:
-                cancel_btn = tk.Button(btn_row, text=" Cancel Booking", bg="#e74c3c", fg="white", font=(t.FONT, 9, "bold"), relief="flat",
+                cancel_btn = tk.Button(btn_row, text=f"{ic.emoji('close')} Cancel Booking", bg="#e74c3c", fg="white", font=(t.FONT, 9, "bold"), relief="flat",
                                        command=lambda bk=b: self.handle_cancel(bk))
                 x_img = ic.get_icon("close", size=13, color="#ffffff", master=btn_row)
                 if x_img:
@@ -506,7 +500,7 @@ class PartnerWelcomeScreen(BaseWelcomeScreen):
         self.root.clipboard_clear()
         self.root.clipboard_append(code)
         orig_text = button.cget("text")
-        button.config(text=" Copied!")
+        button.config(text=f"{ic.emoji('check')} Copied!")
         self.root.after(1500, lambda: button.config(text=orig_text))
 
     def handle_cancel(self, booking):

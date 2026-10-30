@@ -165,22 +165,25 @@ def get_events_today():
 
 
 def create_event(title, category, price, description, vendor_email, venue_id,
-                 event_datetime, is_recurring, recur_day, recur_time, capacity=None):
-    _post("/events", {
+                 event_datetime, is_recurring, recur_day, recur_time, capacity=None, image_b64=None):
+    return _post("/events", {
         "title": title, "category": category, "price": price,
         "description": description, "vendor_email": vendor_email, "venue_id": venue_id,
         "event_datetime": event_datetime, "is_recurring": is_recurring,
         "recur_day": recur_day, "recur_time": recur_time, "capacity": capacity,
+        "image_b64": image_b64,
     })
 
 
 def update_event(event_id, title, category, price, description, venue_id,
-                 event_datetime, is_recurring, recur_day, recur_time, capacity=None):
-    _put(f"/events/{event_id}", {
+                 event_datetime, is_recurring, recur_day, recur_time, capacity=None,
+                 image_b64=None, remove_image=False):
+    return _put(f"/events/{event_id}", {
         "title": title, "category": category, "price": price,
         "description": description, "venue_id": venue_id,
         "event_datetime": event_datetime, "is_recurring": is_recurring,
         "recur_day": recur_day, "recur_time": recur_time, "capacity": capacity,
+        "image_b64": image_b64, "remove_image": remove_image,
     })
 
 
@@ -204,6 +207,15 @@ def get_event_demand(event_id):
 def count_active_bookings(event_id):
     r = _get(f"/events/{event_id}/active_bookings")
     return r.get("count", 0)
+
+
+def get_event_image(event_id):
+    """Picture bytes of an event, or None if the vendor did not add one."""
+    try:
+        resp = _SESSION.get(f"{BASE_URL}/events/{event_id}/image", timeout=10)
+    except requests.exceptions.ConnectionError:
+        raise ConnectionError("Cannot connect to the Rihla server. Is it running? (python server/server.py)")
+    return resp.content if resp.status_code == 200 else None
 
 
 # -----------------------------------------------------------------------
@@ -296,11 +308,14 @@ def get_all_vehicles(dispatcher_email):
 
 
 def create_vehicle(license_number, vehicle_type, location, dispatcher_email, auto_reassign_recurring):
-    _post("/vehicles", {
+    r = _post("/vehicles", {
         "license_number": license_number, "vehicle_type": vehicle_type,
         "location": location, "dispatcher_email": dispatcher_email,
         "auto_reassign_recurring": auto_reassign_recurring,
     })
+    if not r.get("success", False):
+        # Old SQLite code raised IntegrityError (e.g. duplicate license plate); keep that contract for the UI.
+        raise ValueError(r.get("message", "Could not create vehicle."))
 
 
 def delete_vehicle(vehicle_id):
@@ -327,6 +342,11 @@ def get_dispatches_by_event(event_id):
 def dispatch_vehicle_combination(event_id, vehicle_assignments):
     r = _post("/dispatch", {"event_id": event_id, "vehicle_assignments": vehicle_assignments})
     return r.get("assigned", 0)
+
+
+def get_assigned_vehicles_for_event(event_id):
+    r = _get(f"/dispatch/{event_id}/vehicles")
+    return r.get("vehicles", [])
 
 
 # -----------------------------------------------------------------------

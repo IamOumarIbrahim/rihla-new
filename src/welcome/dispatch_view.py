@@ -1,7 +1,8 @@
 import tkinter as tk
 from tkinter import messagebox, ttk
 import theme as t
-from database import get_all_vehicles, get_all_events, dispatch_vehicle_combination, free_vehicle, _connect, get_event_demand, get_event_capacity
+import icons as ic
+from database import get_all_vehicles, get_all_events, dispatch_vehicle_combination, free_vehicle, get_assigned_vehicles_for_event as _api_assigned_vehicles, get_event_demand, get_event_capacity
 
 
 class DispatchView:
@@ -46,21 +47,13 @@ class DispatchView:
         return ""
 
     def get_assigned_vehicles_for_event(self, event_id):
-        with _connect() as conn:
-            rows = conn.execute('''
-                SELECT v.id, v.license_number, v.vehicle_type, v.location, v.status, v.auto_reassign_recurring
-                FROM event_vehicles ev
-                JOIN vehicles v ON ev.vehicle_id = v.id
-                WHERE ev.event_id = ? AND ev.status = 'Assigned'
-            ''', (event_id,)).fetchall()
-        return [{"id": r[0], "license_number": r[1], "vehicle_type": r[2], "location": r[3], "status": r[4], "auto_reassign_recurring": r[5]} for r in rows]
+        return _api_assigned_vehicles(event_id)
 
     def build_dispatch_content(self):
         for widget in self.scrollable_frame.winfo_children():
             widget.destroy()
 
-        tk.Label(self.scrollable_frame, text="Event Dispatch Panel", font=(t.FONT, 22, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 5))
-        tk.Label(self.scrollable_frame, text="Select an event to manage available and assigned vehicle combinations.", font=(t.FONT, 11), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=(0, 15))
+        tk.Label(self.scrollable_frame, text=f"Event Dispatch Panel", font=(t.FONT, 22, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 5))
 
         events = get_all_events()
         if not events:
@@ -71,7 +64,7 @@ class DispatchView:
         sel_card = tk.Frame(self.scrollable_frame, bg=t.CARD_BG, bd=1, relief="solid", highlightbackground=t.BORDER)
         sel_card.pack(fill=tk.X, padx=30, pady=10, ipady=15, ipadx=15)
 
-        tk.Label(sel_card, text="SELECT TARGET EVENT", font=(t.FONT, 10, "bold"), bg=t.CARD_BG, fg=t.PRIMARY).pack(anchor="w", padx=10, pady=(5, 5))
+        tk.Label(sel_card, text=f"SELECT EVENT", font=(t.FONT, 10, "bold"), bg=t.CARD_BG, fg=t.PRIMARY).pack(anchor="w", padx=10, pady=(5, 5))
 
         event_dict = {f"{e['title']} | {e['event_datetime']} | {e['is_recurring']}": e['id'] for e in events}
         event_options = list(event_dict.keys())
@@ -113,7 +106,7 @@ class DispatchView:
         # ---------------------------------------------------------
         # TABLE 1: AVAILABLE VEHICLES
         # ---------------------------------------------------------
-        tk.Label(self.scrollable_frame, text="Available Vehicles", font=(t.FONT, 13, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(15, 5))
+        tk.Label(self.scrollable_frame, text=f"Available Vehicles", font=(t.FONT, 13, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(15, 5))
 
         if not available_vehicles:
             tk.Label(self.scrollable_frame, text="No available vehicles found in fleet.", font=(t.FONT, 10, "italic"), bg=t.PAGE_BG, fg="#e74c3c").pack(anchor="w", padx=30, pady=5)
@@ -222,14 +215,14 @@ class DispatchView:
                 self.dispatch_selected_ids.clear()
                 self.build_dispatch_content()
 
-            assign_btn = tk.Button(btn_frame1, text="Assign Selected Vehicles", font=(t.FONT, 10, "bold"), bg=t.ACCENT, fg="white", relief="flat", command=handle_assign_vehicles)
+            assign_btn = tk.Button(btn_frame1, text=f"{ic.emoji('plus')} Assign Selected Vehicles", font=(t.FONT, 10, "bold"), bg=t.ACCENT, fg="white", relief="flat", command=handle_assign_vehicles)
             assign_btn.pack(side=tk.LEFT, ipadx=12, ipady=6)
             t.add_hover(assign_btn, t.ACCENT, "#e67e22")
 
         # ---------------------------------------------------------
         # TABLE 2: ASSIGNED VEHICLES FOR THIS EVENT
         # ---------------------------------------------------------
-        tk.Label(self.scrollable_frame, text="Assigned Vehicles for Event", font=(t.FONT, 13, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 5))
+        tk.Label(self.scrollable_frame, text=f"Assigned Vehicles for Event", font=(t.FONT, 13, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 5))
 
         if not assigned_vehicles:
             tk.Label(self.scrollable_frame, text="No vehicles currently assigned to this event.", font=(t.FONT, 10, "italic"), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=5)
@@ -330,7 +323,7 @@ class DispatchView:
                 self.assigned_selected_ids.clear()
                 self.build_dispatch_content()
 
-            unassign_btn = tk.Button(btn_frame2, text="Unassign Selected Vehicles", font=(t.FONT, 10, "bold"), bg="#e74c3c", fg="white", relief="flat", command=handle_unassign_vehicles)
+            unassign_btn = tk.Button(btn_frame2, text=f"{ic.emoji('cross')} Unassign Selected Vehicles", font=(t.FONT, 10, "bold"), bg="#e74c3c", fg="white", relief="flat", command=handle_unassign_vehicles)
             unassign_btn.pack(side=tk.LEFT, ipadx=12, ipady=6)
 
     def toggle_dispatch_select_all(self, available_vehicles, tree):
