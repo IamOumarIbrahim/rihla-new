@@ -400,7 +400,6 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
             widget.destroy()
 
         tk.Label(self.scrollable_frame, text="Support", font=(t.FONT, 22, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 5))
-        tk.Label(self.scrollable_frame, text="Write to us and our staff will look at your message.", font=(t.FONT, 11), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=(0, 10))
 
         form = tk.Frame(self.scrollable_frame, bg=t.CARD_BG, bd=1, relief="solid", highlightbackground=t.BORDER)
         form.pack(fill=tk.X, padx=30, pady=10, ipady=10)

@@ -170,8 +170,7 @@ class DispatchView:
     # Step 2 + 3: find and assign available vehicles
     # ------------------------------------------------------------------
     def _build_available_section(self, current_event, available_vehicles):
-        self._section_title("2. Find Available Vehicles",
-                            "Choose what you need, then press Show. Only vehicles that are free right now are listed.")
+        self._section_title("2. Find Available Vehicles")
 
         filter_card = tk.Frame(self.scrollable_frame, bg=t.CARD_BG, bd=1, relief="solid", highlightbackground=t.BORDER)
         filter_card.pack(fill=tk.X, padx=30, pady=5, ipady=8, ipadx=10)
@@ -227,8 +226,7 @@ class DispatchView:
         tk.Label(self.scrollable_frame, text=f"{len(matches)} vehicles found",
                  font=(t.FONT, 10, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(10, 4))
         build_count_table(self.scrollable_frame, [v['vehicle_type'] for v in matches]).pack(anchor="w", padx=30, pady=(0, 10))
-        tk.Label(self.scrollable_frame, text=f"Click a row to select it. Click a heading with {GEAR} to filter that column, or {CHECKED} to select all.",
-                 font=(t.FONT, 9), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=(0, 4))
+
 
         summary_var = tk.StringVar()
         tree = self._build_table("available", AVAILABLE_COLUMNS, matches, visible, on_select_change=lambda: refresh_summary())

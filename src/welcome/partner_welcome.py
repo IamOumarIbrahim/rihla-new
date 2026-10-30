@@ -102,8 +102,7 @@ class PartnerWelcomeScreen(BaseWelcomeScreen):
         banner = tk.Frame(self.scrollable_frame, bg=t.DARK_SOFT, padx=25, pady=15)
         banner.pack(fill=tk.X, padx=30, pady=(20, 10))
 
-        globe_lbl = tk.Label(banner, text=f"OTA Partner Booking Portal", font=(t.FONT, 15, "bold"),
-                             bg=t.DARK_SOFT, fg="white")
+
         globe_img = ic.get_icon("globe", size=18, color="#ffffff", master=banner)
         if globe_img:
             globe_lbl.config(image=globe_img, compound=tk.LEFT)
@@ -268,9 +267,7 @@ class PartnerWelcomeScreen(BaseWelcomeScreen):
         tk.Label(header_row, text=f"{ic.emoji('cart')} OTA Partner Booking List", font=(t.FONT, 20, "bold"),
                  bg=t.PAGE_BG, fg=t.TEXT).pack(side=tk.LEFT)
 
-        tk.Label(self.scrollable_frame,
-                 text="Manage events booked for your customers and make a singular demo payment for all of them at once.",
-                 font=(t.FONT, 10), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=(0, 15))
+
 
         items = get_cart_items(self.email)
 
@@ -430,10 +427,6 @@ class PartnerWelcomeScreen(BaseWelcomeScreen):
                                 relief="solid", bd=1, cursor="hand2", command=self.build_bookings_content)
         refresh_btn.pack(side=tk.RIGHT, ipadx=10, ipady=3)
         t.add_hover(refresh_btn, t.CARD_BG, t.CHIP_HOVER)
-
-        tk.Label(self.scrollable_frame,
-                 text="All excursions booked under your OTA partner account. Distribute ticket codes to your customers.",
-                 font=(t.FONT, 10), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=(0, 15))
 
         bookings = get_bookings_by_customer(self.email)
         if not bookings:

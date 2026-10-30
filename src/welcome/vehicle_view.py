@@ -92,7 +92,6 @@ class VehicleView:
             widget.destroy()
 
         tk.Label(self.scrollable_frame, text=f"Fleet Maintenance & Status Management", font=(t.FONT, 22, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 5))
-        tk.Label(self.scrollable_frame, text="Filter, sort, select vehicles, and view their assigned capacities.", font=(t.FONT, 11), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=(0, 15))
 
         vehicles = get_all_vehicles(self.email)
 
@@ -105,8 +104,7 @@ class VehicleView:
             known_vals.update(current_vals)
 
         style_tables()
-        tk.Label(self.scrollable_frame, text=f"Click a row to select it. Click a heading with {GEAR} to filter that column, or {CHECKED} to select all.",
-                 font=(t.FONT, 9), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=(0, 4))
+
 
         table_frame = tk.Frame(self.scrollable_frame, bg=t.CARD_BG, bd=1, relief="solid", highlightbackground=t.BORDER)
         table_frame.pack(fill=tk.X, padx=30, pady=5)

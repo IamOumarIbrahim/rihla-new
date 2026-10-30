@@ -51,7 +51,6 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
             widget.destroy()
 
         tk.Label(self.scrollable_frame, text=f"Welcome back, {self.username}!", font=(t.FONT, 22, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 5))
-        tk.Label(self.scrollable_frame, text="Manage your event listings below.", font=(t.FONT, 11), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=(0, 15))
 
         action_frame = tk.Frame(self.scrollable_frame, bg=t.PAGE_BG)
         action_frame.pack(fill=tk.X, padx=30, pady=10)
@@ -144,8 +143,7 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
         visible = [b for b in bookings
                    if all(str(self._booking_val(b, ck)) not in vals for ck, vals in self.booking_hidden.items())]
 
-        tk.Label(self.scrollable_frame, text=f"Click a heading with {GEAR} to filter that column. Totals include 5% VAT.",
-                 font=(t.FONT, 9), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=(0, 4))
+
 
         frame = tk.Frame(self.scrollable_frame, bg=t.CARD_BG, bd=1, relief="solid", highlightbackground=t.BORDER)
         frame.pack(fill=tk.X, padx=30, pady=2)
@@ -179,9 +177,7 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
         action_row.pack(fill=tk.X, padx=30, pady=(6, 10))
         cancel_btn = cancel_button(action_row)
         cancel_btn.pack(side=tk.LEFT, ipadx=10, ipady=4)
-        detail = tk.Label(action_row, text="Select a booking to cancel it or see its cancellation details.",
-                          font=(t.FONT, 9), bg=t.PAGE_BG, fg=t.TEXT_MUTED, wraplength=650, justify="left")
-        detail.pack(side=tk.LEFT, padx=12)
+
 
         def selected_booking():
             chosen = tree.selection()
@@ -265,7 +261,6 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
             widget.destroy()
 
         tk.Label(self.scrollable_frame, text="Manage Venues", font=(t.FONT, 22, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 5))
-        tk.Label(self.scrollable_frame, text="Add or remove venues where you host events.", font=(t.FONT, 11), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=(0, 15))
 
         add_box = tk.Frame(self.scrollable_frame, bg=t.PAGE_BG)
         add_box.pack(fill=tk.X, padx=30, pady=10)
@@ -399,7 +394,6 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
             widget.destroy()
 
         tk.Label(self.scrollable_frame, text="Manage Categories", font=(t.FONT, 22, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 5))
-        tk.Label(self.scrollable_frame, text="Add or remove custom categories for your events.", font=(t.FONT, 11), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=(0, 15))
 
         add_box = tk.Frame(self.scrollable_frame, bg=t.PAGE_BG)
         add_box.pack(fill=tk.X, padx=30, pady=10)
