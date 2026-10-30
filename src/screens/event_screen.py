@@ -5,10 +5,12 @@ from tkinter import messagebox
 import navigate
 import theme as t
 from ui import clear_window
-from database import create_booking, format_ticket_code, price_to_int, MAX_GUESTS_PER_BOOKING
+from database import create_booking, format_ticket_code, price_to_int, get_event_capacity, MAX_GUESTS_PER_BOOKING
 
 def show_event_screen(root, email, tour):
     clear_window(root)
+    # Read capacity fresh from the database, because vehicles can change after the list was loaded.
+    capacity = get_event_capacity(tour["id"])
 
     container = tk.Frame(root, bg=t.CARD_BG)
     container.pack(fill=tk.BOTH, expand=True)
@@ -44,6 +46,17 @@ def show_event_screen(root, email, tour):
     ]
     for item in details:
         tk.Label(left_frame, text=item, font=(t.FONT, 10), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", pady=2)
+
+    tk.Label(left_frame, text="Capacity and Vehicles", font=(t.FONT, 14, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(anchor="w", pady=(20, 5))
+    capacity_lines = [f"- Capacity: {capacity['total']} guests per date"]
+    if capacity["vehicles"]:
+        for vehicle in capacity["vehicles"]:
+            capacity_lines.append(f"- Vehicles: {vehicle['count']} x {vehicle['vehicle_type']} ({vehicle['seats_each']} seats each)")
+        capacity_lines.append("- The seats of these vehicles set the limit for this event.")
+    else:
+        capacity_lines.append("- Vehicles: none for this event")
+    for item in capacity_lines:
+        tk.Label(left_frame, text=item, font=(t.FONT, 10), bg=t.CARD_BG, fg=t.TEXT_MUTED, wraplength=600, justify="left").pack(anchor="w", pady=2)
 
     # ----- Right Side: Booking Sidebar with Calendar Widget -----
     right_sidebar = tk.Frame(container, bg=t.FIELD_BG, padx=20, pady=30)
@@ -90,14 +103,19 @@ def show_event_screen(root, email, tour):
     selected_label = tk.Label(right_sidebar, text="Selected: None", font=(t.FONT, 9, "bold"), bg=t.FIELD_BG, fg="#e74c3c")
     selected_label.pack(anchor="w", pady=(10, 5))
 
+    seats_label = tk.Label(right_sidebar, text=f"Capacity: {capacity['total']} guests per date. Pick a date to see the seats left.",
+                           font=(t.FONT, 10, "bold"), bg=t.FIELD_BG, fg=t.TEXT_MUTED, wraplength=260, justify="left")
+    seats_label.pack(anchor="w", pady=(0, 5))
+
     # ----- guests and total price -----
     unit_price = price_to_int(tour["price"])
     guests_row = tk.Frame(right_sidebar, bg=t.FIELD_BG)
     guests_row.pack(fill=tk.X, pady=(5, 0))
     tk.Label(guests_row, text="Guests:", font=(t.FONT, 10, "bold"), bg=t.FIELD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT)
     guests_var = tk.IntVar(value=1)
-    tk.Spinbox(guests_row, from_=1, to=MAX_GUESTS_PER_BOOKING, width=4, textvariable=guests_var, state="readonly",
-               readonlybackground=t.CARD_BG, font=(t.FONT, 10)).pack(side=tk.LEFT, padx=8)
+    guests_spin = tk.Spinbox(guests_row, from_=1, to=max(1, min(MAX_GUESTS_PER_BOOKING, capacity["total"])), width=4,
+                             textvariable=guests_var, state="readonly", readonlybackground=t.CARD_BG, font=(t.FONT, 10))
+    guests_spin.pack(side=tk.LEFT, padx=8)
 
     total_label = tk.Label(right_sidebar, text="", font=(t.FONT, 12, "bold"), bg=t.FIELD_BG, fg=t.TEXT)
     total_label.pack(anchor="w", pady=(8, 0))
@@ -113,6 +131,32 @@ def show_event_screen(root, email, tour):
 
     guests_var.trace_add("write", update_total)
     update_total()
+
+    def refresh_capacity():
+        """Shows the seats left on the chosen date and stops the guests box from going above them."""
+        chosen = cal_state["selected"]
+        info = get_event_capacity(tour["id"], chosen)
+        fully_booked = False
+        if chosen is None:
+            limit = min(MAX_GUESTS_PER_BOOKING, info["total"])
+        else:
+            left = info["remaining"]
+            fully_booked = left <= 0
+            limit = min(MAX_GUESTS_PER_BOOKING, left)
+            if fully_booked:
+                seats_label.config(text=f"Fully booked on {chosen.strftime('%b %d, %Y')} (capacity {info['total']}).", fg="#e74c3c")
+            else:
+                seats_label.config(text=f"Seats left on {chosen.strftime('%b %d, %Y')}: {left} of {info['total']}",
+                                   fg="#e67e22" if left <= 3 else "#27ae60")
+        limit = max(1, limit)
+        guests_spin.config(to=limit)
+        if current_guests() > limit:
+            guests_var.set(limit)
+        if fully_booked:
+            book_btn.config(state=tk.DISABLED, text="Fully booked")
+        else:
+            book_btn.config(state=tk.NORMAL, text="Proceed to Booking")
+        return info
 
     def draw_calendar():
         for widget in days_grid.winfo_children():
@@ -154,6 +198,7 @@ def show_event_screen(root, email, tour):
     def select_date(d_obj):
         cal_state["selected"] = d_obj
         selected_label.config(text=f"Selected: {d_obj.strftime('%b %d, %Y')}", fg="#27ae60")
+        refresh_capacity()
         draw_calendar()
 
     def prev_month():
@@ -183,6 +228,14 @@ def show_event_screen(root, email, tour):
             return
         chosen_date = cal_state["selected"]
         guests = current_guests()
+        # Check the seats again now, because other customers may have booked since the date was picked.
+        info = refresh_capacity()
+        if guests > info["remaining"]:
+            if info["remaining"] <= 0:
+                messagebox.showerror("Fully booked", "This event is fully booked on that date. Please choose another date.")
+            else:
+                messagebox.showerror("Not enough seats", f"Only {info['remaining']} seat(s) are left on that date. Please lower the number of guests or choose another date.")
+            return
         if not messagebox.askyesno(
             "Confirm booking",
             f"Book {tour['title']} on {chosen_date.strftime('%b %d, %Y')} for {guests} guest(s)?\n\nTotal: {unit_price * guests} AED",
@@ -192,6 +245,7 @@ def show_event_screen(root, email, tour):
         result = create_booking(email, tour["id"], chosen_date.isoformat(), guests)
         if not result["success"]:
             messagebox.showerror("Booking failed", result["message"])
+            refresh_capacity()
             return
 
         booking = result["booking"]

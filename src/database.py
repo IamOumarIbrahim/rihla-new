@@ -10,6 +10,10 @@ from config import ROLES, DEMO_ACCOUNTS
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "users.db")
 
+# Guests an event can take on one date when no vehicles are assigned to it.
+DEFAULT_EVENT_CAPACITY = 20
+MAX_EVENT_CAPACITY = 5000
+
 
 @contextmanager
 def _connect():
@@ -79,6 +83,7 @@ def init_db():
                 is_recurring TEXT,
                 recur_day TEXT,
                 recur_time TEXT,
+                capacity INTEGER NOT NULL DEFAULT 20,
                 FOREIGN KEY(venue_id) REFERENCES venues(id)
             )
         ''')
@@ -165,6 +170,11 @@ def init_db():
             )
         ''')
 
+        # Databases made before event capacity existed get the new column (old events start at 20).
+        event_columns = [row[1] for row in conn.execute("PRAGMA table_info(events)")]
+        if "capacity" not in event_columns:
+            conn.execute(f"ALTER TABLE events ADD COLUMN capacity INTEGER NOT NULL DEFAULT {DEFAULT_EVENT_CAPACITY}")
+
         cursor = conn.cursor()
 
         cursor.execute("SELECT COUNT(*) FROM vehicle_types")
@@ -197,10 +207,10 @@ def init_db():
         cursor.execute("SELECT COUNT(*) FROM events")
         if cursor.fetchone()[0] == 0:
             demo_events = [
-                ("New year dinner", "New Year Dinner", "500 AED", "Exclusive dining experience at the top with fireworks view.", "vendor@email.com", 1, "2026-12-31 23:00", "One-Time", "N/A", "23:00"),
-                ("Red Dune Sunset Safari and Royal BBQ Dinner", "Evening Safari", "240 AED", "Experience dune bashing, camel rides, and traditional buffet dinners under the desert stars.", "vendor@email.com", 2, "2026-11-05 15:30", "Recurring", "Tuesday, Thursday", "15:30")
+                ("New year dinner", "New Year Dinner", "500 AED", "Exclusive dining experience at the top with fireworks view.", "vendor@email.com", 1, "2026-12-31 23:00", "One-Time", "N/A", "23:00", 40),
+                ("Red Dune Sunset Safari and Royal BBQ Dinner", "Evening Safari", "240 AED", "Experience dune bashing, camel rides, and traditional buffet dinners under the desert stars.", "vendor@email.com", 2, "2026-11-05 15:30", "Recurring", "Tuesday, Thursday", "15:30", 30)
             ]
-            conn.executemany("INSERT INTO events (title, category, price, description, vendor_email, venue_id, event_datetime, is_recurring, recur_day, recur_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", demo_events)
+            conn.executemany("INSERT INTO events (title, category, price, description, vendor_email, venue_id, event_datetime, is_recurring, recur_day, recur_time, capacity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", demo_events)
 
         cursor.execute("SELECT COUNT(*) FROM vehicles")
         if cursor.fetchone()[0] == 0:
@@ -334,28 +344,38 @@ def delete_venue(venue_id):
         conn.execute("DELETE FROM venues WHERE id = ?", (venue_id,))
     return True
 
-def create_event(title, category, price, description, vendor_email, venue_id, event_datetime, is_recurring, recur_day, recur_time):
+def _capacity_or_default(value):
+    """None -> the default capacity. Anything else must be a whole number from 1 to MAX_EVENT_CAPACITY."""
+    if value is None:
+        return DEFAULT_EVENT_CAPACITY
+    value = int(value)
+    if not 1 <= value <= MAX_EVENT_CAPACITY:
+        raise ValueError(f"Capacity must be between 1 and {MAX_EVENT_CAPACITY}.")
+    return value
+
+def create_event(title, category, price, description, vendor_email, venue_id, event_datetime, is_recurring, recur_day, recur_time, capacity=None):
+    capacity = _capacity_or_default(capacity)
     with _connect() as conn:
         conn.execute(
-            "INSERT INTO events (title, category, price, description, vendor_email, venue_id, event_datetime, is_recurring, recur_day, recur_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (title, category, price, description, vendor_email, venue_id, event_datetime, is_recurring, recur_day, recur_time)
+            "INSERT INTO events (title, category, price, description, vendor_email, venue_id, event_datetime, is_recurring, recur_day, recur_time, capacity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (title, category, price, description, vendor_email, venue_id, event_datetime, is_recurring, recur_day, recur_time, capacity)
         )
 
 def get_all_events():
     with _connect() as conn:
         rows = conn.execute('''
-            SELECT e.id, e.title, e.category, e.price, e.description, e.vendor_email, v.name, e.event_datetime, e.is_recurring, e.recur_day, e.recur_time, e.venue_id
+            SELECT e.id, e.title, e.category, e.price, e.description, e.vendor_email, v.name, e.event_datetime, e.is_recurring, e.recur_day, e.recur_time, e.venue_id, e.capacity
             FROM events e LEFT JOIN venues v ON e.venue_id = v.id
         ''').fetchall()
-    return [{"id": r[0], "title": r[1], "category": r[2], "price": r[3], "desc": r[4], "vendor_email": r[5], "venue_name": r[6], "event_datetime": r[7], "is_recurring": r[8], "recur_day": r[9], "recur_time": r[10], "venue_id": r[11]} for r in rows]
+    return [{"id": r[0], "title": r[1], "category": r[2], "price": r[3], "desc": r[4], "vendor_email": r[5], "venue_name": r[6], "event_datetime": r[7], "is_recurring": r[8], "recur_day": r[9], "recur_time": r[10], "venue_id": r[11], "capacity": r[12]} for r in rows]
 
 def get_events_by_vendor(vendor_email):
     with _connect() as conn:
         rows = conn.execute('''
-            SELECT e.id, e.title, e.category, e.price, e.description, e.vendor_email, v.name, e.event_datetime, e.is_recurring, e.recur_day, e.recur_time, e.venue_id
+            SELECT e.id, e.title, e.category, e.price, e.description, e.vendor_email, v.name, e.event_datetime, e.is_recurring, e.recur_day, e.recur_time, e.venue_id, e.capacity
             FROM events e LEFT JOIN venues v ON e.venue_id = v.id WHERE e.vendor_email = ?
         ''', (vendor_email,)).fetchall()
-    return [{"id": r[0], "title": r[1], "category": r[2], "price": r[3], "desc": r[4], "vendor_email": r[5], "venue_name": r[6], "event_datetime": r[7], "is_recurring": r[8], "recur_day": r[9], "recur_time": r[10], "venue_id": r[11]} for r in rows]
+    return [{"id": r[0], "title": r[1], "category": r[2], "price": r[3], "desc": r[4], "vendor_email": r[5], "venue_name": r[6], "event_datetime": r[7], "is_recurring": r[8], "recur_day": r[9], "recur_time": r[10], "venue_id": r[11], "capacity": r[12]} for r in rows]
 
 def get_events_by_venue(venue_id):
     with _connect() as conn:
@@ -365,8 +385,12 @@ def get_events_by_venue(venue_id):
         ''', (venue_id,)).fetchall()
     return [{"id": r[0], "title": r[1], "category": r[2], "price": r[3], "desc": r[4], "vendor_email": r[5], "venue_id": r[6], "event_datetime": r[7], "is_recurring": r[8], "recur_day": r[9], "recur_time": r[10]} for r in rows]
 
-def update_event(event_id, title, category, price, description, venue_id, event_datetime, is_recurring, recur_day, recur_time):
+def update_event(event_id, title, category, price, description, venue_id, event_datetime, is_recurring, recur_day, recur_time, capacity=None):
+    """capacity=None keeps the capacity the event already has."""
+    new_capacity = None if capacity is None else _capacity_or_default(capacity)
     with _connect() as conn:
+        if new_capacity is not None:
+            conn.execute("UPDATE events SET capacity = ? WHERE id = ?", (new_capacity, event_id))
         conn.execute(
             "UPDATE events SET title = ?, category = ?, price = ?, description = ?, venue_id = ?, event_datetime = ?, is_recurring = ?, recur_day = ?, recur_time = ? WHERE id = ?",
             (title, category, price, description, venue_id, event_datetime, is_recurring, recur_day, recur_time, event_id)
@@ -550,6 +574,51 @@ def _event_allows_date(is_recurring, recur_day, event_datetime, day):
     return str(event_datetime or "")[:10] == day.isoformat()
 
 
+def _capacity_info(conn, event_id, day=None):
+    """How many guests an event can take on one date.
+
+    With vehicles assigned, the seats of those vehicles are the limit (any mix of types).
+    Without vehicles, the capacity the vendor typed in is the limit.
+    With a day, 'booked' and 'remaining' count the confirmed guests of that date.
+    """
+    row = conn.execute("SELECT capacity FROM events WHERE id = ?", (event_id,)).fetchone()
+    event_capacity = row[0] if row and row[0] is not None else DEFAULT_EVENT_CAPACITY
+    rows = conn.execute(
+        "SELECT v.vehicle_type, COUNT(*), COALESCE(vt.capacity, 4) FROM event_vehicles ev "
+        "JOIN vehicles v ON v.id = ev.vehicle_id LEFT JOIN vehicle_types vt ON vt.name = v.vehicle_type "
+        "WHERE ev.event_id = ? AND ev.status = 'Assigned' GROUP BY v.vehicle_type ORDER BY v.vehicle_type",
+        (event_id,),
+    ).fetchall()
+    vehicles = [{"vehicle_type": r[0], "count": r[1], "seats_each": r[2]} for r in rows]
+    if vehicles:
+        total = sum(v["count"] * v["seats_each"] for v in vehicles)
+        source = "vehicles"
+    else:
+        total = event_capacity
+        source = "event"
+    info = {"total": total, "source": source, "vehicles": vehicles, "booked": None, "remaining": None}
+    if day is not None:
+        booked = conn.execute(
+            "SELECT COALESCE(SUM(guests), 0) FROM bookings WHERE event_id = ? AND booking_date = ? AND status = 'Confirmed'",
+            (event_id, day.isoformat()),
+        ).fetchone()[0]
+        info["booked"] = booked
+        info["remaining"] = max(0, total - booked)
+    return info
+
+
+def get_event_capacity(event_id, booking_date=None):
+    """Capacity of one event: {"total", "source" ("vehicles" or "event"), "vehicles", "booked", "remaining"}.
+
+    'booked' and 'remaining' are None unless a booking_date (date or 'YYYY-MM-DD') is given.
+    """
+    day = None
+    if booking_date is not None:
+        day = booking_date if isinstance(booking_date, date) else date.fromisoformat(str(booking_date))
+    with _connect() as conn:
+        return _capacity_info(conn, event_id, day)
+
+
 def create_booking(customer_email, event_id, booking_date, guests):
     """Saves a booking and creates its 16-digit ticket code.
 
@@ -572,6 +641,8 @@ def create_booking(customer_email, event_id, booking_date, guests):
         return refuse("This date is in the past. Please choose another date.")
 
     with _connect() as conn:
+        # Lock now, so two customers cannot both take the last seats.
+        conn.execute("BEGIN IMMEDIATE")
         event = conn.execute(
             "SELECT e.title, e.price, e.is_recurring, e.recur_day, e.event_datetime, e.recur_time, v.name "
             "FROM events e LEFT JOIN venues v ON v.id = e.venue_id WHERE e.id = ?",
@@ -591,6 +662,15 @@ def create_booking(customer_email, event_id, booking_date, guests):
         ).fetchone()
         if already:
             return refuse("You already have a booking for this event on that date. See My Bookings.")
+
+        capacity = _capacity_info(conn, event_id, day)
+        if guests > capacity["remaining"]:
+            if capacity["remaining"] == 0:
+                return refuse(f"Sorry, this event is fully booked on that date (capacity {capacity['total']}).")
+            return refuse(
+                f"Not enough seats. Only {capacity['remaining']} of {capacity['total']} seats are left "
+                f"on that date, and you asked for {guests}."
+            )
 
         code = _new_ticket_code(conn)
         total = price_to_int(price) * guests

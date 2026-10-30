@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import messagebox, ttk
 import theme as t
-from database import get_all_vehicles, get_all_events, dispatch_vehicle_combination, free_vehicle, _connect, get_event_demand
+from database import get_all_vehicles, get_all_events, dispatch_vehicle_combination, free_vehicle, _connect, get_event_demand, get_event_capacity
 
 
 class DispatchView:
@@ -99,6 +99,12 @@ class DispatchView:
         current_event_id = event_dict[selected_event_str.get()]
         bookings_count, guests_count = get_event_demand(current_event_id)
         tk.Label(sel_card, text=f"Upcoming bookings: {bookings_count}   |   Guests booked: {guests_count}", font=(t.FONT, 10, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(anchor="w", padx=10, pady=(0, 5))
+        event_capacity = get_event_capacity(current_event_id)
+        if event_capacity["source"] == "vehicles":
+            capacity_text = f"Capacity: {event_capacity['total']} guests per date (total seats of the assigned vehicles)"
+        else:
+            capacity_text = f"Capacity: {event_capacity['total']} guests per date (set by the vendor, no vehicles assigned)"
+        tk.Label(sel_card, text=capacity_text, font=(t.FONT, 10), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=10, pady=(0, 5))
 
         vehicles = get_all_vehicles(self.email)
         available_vehicles = [v for v in vehicles if v['status'] == 'Available']

@@ -113,5 +113,124 @@ class BookingTests(unittest.TestCase):
         self.assertEqual(statuses.count("Resolved"), 1)
 
 
+class CapacityTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        d.DB_PATH = os.path.join(self.tmp.name, "test.db")
+        d.init_db()
+        self.day = datetime.date.today() + datetime.timedelta(days=3)
+        d.create_event("Small dinner", "General", "100 AED", "a long enough description", "vendor@email.com", 1,
+                       self.day.isoformat() + " 19:00", "One-Time", "N/A", "19:00", capacity=5)
+        self.dinner = [e for e in d.get_all_events() if e["title"] == "Small dinner"][0]
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def book(self, email, guests, event=None, day=None):
+        return d.create_booking(email, (event or self.dinner)["id"], (day or self.day).isoformat(), guests)
+
+    def assign(self, event_id, vehicle_type, how_many):
+        fleet = [v for v in d.get_all_vehicles("dispatcher@email.com") if v["vehicle_type"] == vehicle_type and v["status"] == "Available"]
+        chosen = fleet[:how_many]
+        self.assertEqual(len(chosen), how_many)
+        d.dispatch_vehicle_combination(event_id, [{"vehicle_id": v["id"], "auto_reassign_recurring": 0} for v in chosen])
+
+    def test_event_without_vehicles_uses_its_own_capacity(self):
+        info = d.get_event_capacity(self.dinner["id"], self.day)
+        self.assertEqual((info["total"], info["source"], info["vehicles"]), (5, "event", []))
+        self.assertEqual((info["booked"], info["remaining"]), (0, 5))
+
+    def test_cannot_book_more_than_capacity(self):
+        self.assertTrue(self.book("a@email.com", 3)["success"])
+        too_many = self.book("b@email.com", 3)
+        self.assertFalse(too_many["success"])
+        self.assertIn("Only 2 of 5 seats", too_many["message"])
+        self.assertTrue(self.book("b@email.com", 2)["success"])
+        full = self.book("c@email.com", 1)
+        self.assertFalse(full["success"])
+        self.assertIn("fully booked", full["message"])
+        self.assertEqual(d.get_event_capacity(self.dinner["id"], self.day)["remaining"], 0)
+
+    def test_one_booking_cannot_be_larger_than_the_whole_event(self):
+        self.assertFalse(self.book("a@email.com", 6)["success"])
+        self.assertTrue(self.book("a@email.com", 5)["success"])
+
+    def test_cancelling_frees_the_seats(self):
+        booking = self.book("a@email.com", 5)["booking"]
+        self.assertFalse(self.book("b@email.com", 1)["success"])
+        d.cancel_booking(booking["id"], "a@email.com")
+        self.assertEqual(d.get_event_capacity(self.dinner["id"], self.day)["remaining"], 5)
+        self.assertTrue(self.book("b@email.com", 1)["success"])
+
+    def test_capacity_counts_each_date_on_its_own(self):
+        d.create_event("Daily tour", "General", "50 AED", "a long enough description", "vendor@email.com", 1,
+                       self.day.isoformat() + " 09:00", "Recurring",
+                       "Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday", "09:00", capacity=2)
+        tour = [e for e in d.get_all_events() if e["title"] == "Daily tour"][0]
+        next_day = self.day + datetime.timedelta(days=1)
+        self.assertTrue(self.book("a@email.com", 2, tour)["success"])
+        self.assertFalse(self.book("b@email.com", 1, tour)["success"])
+        self.assertTrue(self.book("b@email.com", 1, tour, next_day)["success"])
+
+    def test_vehicle_combination_sets_the_capacity(self):
+        self.assign(self.dinner["id"], "desert buggy", 1)
+        self.assign(self.dinner["id"], "4x4 toyota landcrusier", 1)
+        info = d.get_event_capacity(self.dinner["id"])
+        self.assertEqual((info["total"], info["source"]), (8, "vehicles"))
+        self.assertEqual(sorted((v["vehicle_type"], v["count"], v["seats_each"]) for v in info["vehicles"]),
+                         [("4x4 toyota landcrusier", 1, 6), ("desert buggy", 1, 2)])
+        self.assertTrue(self.book("a@email.com", 6)["success"])
+        self.assertFalse(self.book("b@email.com", 3)["success"])
+        self.assertTrue(self.book("b@email.com", 2)["success"])
+
+    def test_two_vehicles_of_the_same_type_add_up(self):
+        self.assign(self.dinner["id"], "desert buggy", 2)
+        self.assertEqual(d.get_event_capacity(self.dinner["id"])["total"], 4)
+
+    def test_freeing_a_vehicle_goes_back_to_vendor_capacity(self):
+        self.assign(self.dinner["id"], "RTA bus", 1)
+        self.assertEqual(d.get_event_capacity(self.dinner["id"])["total"], 50)
+        bus = [v for v in d.get_all_vehicles("dispatcher@email.com") if v["vehicle_type"] == "RTA bus"][0]
+        d.free_vehicle(bus["id"])
+        info = d.get_event_capacity(self.dinner["id"])
+        self.assertEqual((info["total"], info["source"]), (5, "event"))
+
+    def test_edit_event_capacity(self):
+        e = self.dinner
+        d.update_event(e["id"], e["title"], e["category"], e["price"], e["desc"], e["venue_id"], e["event_datetime"],
+                       e["is_recurring"], e["recur_day"], e["recur_time"], capacity=8)
+        self.assertEqual(d.get_event_capacity(e["id"])["total"], 8)
+        # No capacity given: the event keeps the one it has.
+        d.update_event(e["id"], e["title"], e["category"], e["price"], e["desc"], e["venue_id"], e["event_datetime"],
+                       e["is_recurring"], e["recur_day"], e["recur_time"])
+        self.assertEqual(d.get_event_capacity(e["id"])["total"], 8)
+
+    def test_bad_capacity_is_rejected(self):
+        for bad in (0, -3, d.MAX_EVENT_CAPACITY + 1):
+            with self.assertRaises(ValueError):
+                d.create_event("Bad", "General", "10 AED", "a long enough description", "vendor@email.com", 1,
+                               "2030-01-01 10:00", "One-Time", "N/A", "10:00", capacity=bad)
+
+    def test_demo_events_have_capacity(self):
+        titles = {e["title"]: e["capacity"] for e in d.get_all_events()}
+        self.assertEqual(titles["New year dinner"], 40)
+        self.assertEqual(titles["Red Dune Sunset Safari and Royal BBQ Dinner"], 30)
+
+    def test_old_database_gets_the_capacity_column(self):
+        import sqlite3
+        old_path = os.path.join(self.tmp.name, "old.db")
+        conn = sqlite3.connect(old_path)
+        conn.execute("CREATE TABLE events (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, category TEXT, price TEXT, "
+                     "description TEXT, vendor_email TEXT, venue_id INTEGER, event_datetime TEXT, is_recurring TEXT, recur_day TEXT, recur_time TEXT)")
+        conn.execute("INSERT INTO events (title, price, event_datetime, is_recurring) VALUES ('Old event', '10 AED', '2030-01-01 10:00', 'One-Time')")
+        conn.commit()
+        conn.close()
+        d.DB_PATH = old_path
+        d.init_db()
+        d.init_db()
+        old_event = [e for e in d.get_all_events() if e["title"] == "Old event"][0]
+        self.assertEqual(old_event["capacity"], d.DEFAULT_EVENT_CAPACITY)
+
+
 if __name__ == "__main__":
     unittest.main()

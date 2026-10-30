@@ -28,14 +28,17 @@ Test ticket code for the staff scanner: `1234567890123456` (event: New year dinn
 
 ## What each role can do
 
-- **Customer**: browse events, pick a date and number of guests, book and get a 16-digit ticket code.
+- **Customer**: browse events, see the capacity and vehicles of each event, pick a date and number of guests, book and get a 16-digit ticket code.
+  The booking screen shows the seats left on the chosen date. A booking that is bigger than the seats left is refused.
   *My Bookings* shows every ticket (Confirmed, Checked in, Expired, Cancelled) and lets you cancel an unused one.
   *Support* sends a message to staff.
-- **Vendor**: create events, venues and categories. *Bookings* shows who booked and the guests and money booked.
+- **Vendor**: create events (with a capacity), venues and categories. *Bookings* shows who booked and the guests and money booked.
   Deleting an event cancels its unused bookings and tickets.
 - **Staff**: *Ticket Scanner* admits a ticket once and says how many guests to let in. *Support Tickets* lists open
   messages from customers. *Schedule* lists today's events with expected guests.
-- **Dispatcher**: register and assign vehicles. The dispatch screen shows the guests booked for the chosen event.
+- **Dispatcher**: register and assign vehicles. The dispatch screen shows the guests booked and the capacity of the chosen event.
+- **Event capacity**: an event with vehicles can take as many guests as the seats of its vehicles (any mix of types).
+  An event with no vehicles uses the capacity the vendor typed in. Seats are counted per date, and cancelled bookings free their seats.
 - **Every role**: *Dashboard* returns to the home screen, *Settings* changes the password.
 - **Partner**: the screens are still placeholders.
 

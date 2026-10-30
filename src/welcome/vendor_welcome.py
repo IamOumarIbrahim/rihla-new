@@ -6,7 +6,7 @@ from database import (
     get_events_by_vendor, create_event, update_event, delete_event,
     get_vendor_categories, add_vendor_category, delete_vendor_category,
     get_venues_by_vendor, create_venue, delete_venue, count_active_bookings,
-    get_bookings_by_vendor
+    get_bookings_by_vendor, get_event_capacity, DEFAULT_EVENT_CAPACITY, MAX_EVENT_CAPACITY
 )
 import theme as t
 
@@ -57,6 +57,13 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
             venue_display = event.get('venue_name') or 'Unknown Venue'
             recur_suffix = f" ({event['recur_day']})" if event['is_recurring'] == "Recurring" and event['recur_day'] not in (None, "", "None", "N/A") else ""
             tk.Label(card, text=f"📍 {venue_display} | ⏰ {event['event_datetime']} | 🔁 {event['is_recurring']}{recur_suffix}", font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=15, pady=2)
+            cap = get_event_capacity(event['id'])
+            if cap['vehicles']:
+                vehicle_count = sum(v['count'] for v in cap['vehicles'])
+                capacity_text = f"👥 Capacity: {cap['total']} guests (seats of {vehicle_count} assigned vehicle(s))"
+            else:
+                capacity_text = f"👥 Capacity: {cap['total']} guests (no vehicles assigned)"
+            tk.Label(card, text=capacity_text, font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=15, pady=2)
             tk.Label(card, text=event['desc'], font=(t.FONT, 10), bg=t.CARD_BG, fg=t.TEXT_MUTED, wraplength=600, justify="left").pack(anchor="w", padx=15, pady=5)
 
             btn_row = tk.Frame(card, bg=t.CARD_BG)
@@ -345,16 +352,25 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
 
         update_day_buttons()
 
-        # Price
-        tk.Label(form_frame, text="PRICE", font=(t.FONT, 9, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", pady=(8, 2))
-        price_row = tk.Frame(form_frame, bg=t.CARD_BG)
-        price_row.pack(fill=tk.X)
-        price_entry = tk.Entry(price_row, font=(t.FONT, 11), bg=t.FIELD_BG, relief="solid", bd=1)
-        price_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=4)
+        # Price and capacity share one row, so the form keeps its height
+        price_cap_row = tk.Frame(form_frame, bg=t.CARD_BG)
+        price_cap_row.pack(fill=tk.X, pady=(8, 0))
+
+        price_col = tk.Frame(price_cap_row, bg=t.CARD_BG)
+        price_col.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
+        tk.Label(price_col, text="PRICE (AED)", font=(t.FONT, 9, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", pady=(0, 2))
+        price_entry = tk.Entry(price_col, font=(t.FONT, 11), bg=t.FIELD_BG, relief="solid", bd=1)
+        price_entry.pack(fill=tk.X, ipady=4)
         if event:
             raw_price = str(event["price"]).replace(" AED", "").strip()
             price_entry.insert(0, raw_price)
-        tk.Label(price_row, text="AED", font=(t.FONT, 11, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(side=tk.LEFT, padx=(8, 0))
+
+        capacity_col = tk.Frame(price_cap_row, bg=t.CARD_BG)
+        capacity_col.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        tk.Label(capacity_col, text="CAPACITY (GUESTS)", font=(t.FONT, 9, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", pady=(0, 2))
+        capacity_entry = tk.Entry(capacity_col, font=(t.FONT, 11), bg=t.FIELD_BG, relief="solid", bd=1)
+        capacity_entry.pack(fill=tk.X, ipady=4)
+        capacity_entry.insert(0, str(event.get("capacity") or DEFAULT_EVENT_CAPACITY) if event else str(DEFAULT_EVENT_CAPACITY))
 
         # Description
         tk.Label(form_frame, text="DESCRIPTION", font=(t.FONT, 9, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", pady=(8, 2))
@@ -370,6 +386,7 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
             is_recurring = recurring_var.get()
             recur_day = ", ".join([d for d in days_list if d in selected_days_set]) if selected_days_set else "None"
             price_val = price_entry.get().strip()
+            capacity_val = capacity_entry.get().strip()
             desc = desc_text.get("1.0", tk.END).strip()
 
             if not title or len(title) < 3:
@@ -380,6 +397,9 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
                 return
             if not (price_val.isascii() and price_val.isdigit()) or int(price_val) <= 0:
                 messagebox.showerror("Error", "Price must contain numbers only.", parent=modal)
+                return
+            if not (capacity_val.isascii() and capacity_val.isdigit()) or not 1 <= int(capacity_val) <= MAX_EVENT_CAPACITY:
+                messagebox.showerror("Error", f"Capacity must be a whole number from 1 to {MAX_EVENT_CAPACITY}.", parent=modal)
                 return
             if not desc or len(desc) < 10:
                 messagebox.showerror("Error", "Description must be at least 10 characters long.", parent=modal)
@@ -401,10 +421,10 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
             recur_time = parsed_datetime.strftime("%H:%M")
 
             if event:
-                update_event(event["id"], title, category, formatted_price, desc, venue_id, event_datetime, is_recurring, recur_day, recur_time)
+                update_event(event["id"], title, category, formatted_price, desc, venue_id, event_datetime, is_recurring, recur_day, recur_time, capacity=int(capacity_val))
                 messagebox.showinfo("Success", "Event updated successfully!", parent=modal)
             else:
-                create_event(title, category, formatted_price, desc, self.email, venue_id, event_datetime, is_recurring, recur_day, recur_time)
+                create_event(title, category, formatted_price, desc, self.email, venue_id, event_datetime, is_recurring, recur_day, recur_time, capacity=int(capacity_val))
                 messagebox.showinfo("Success", "Event created successfully!", parent=modal)
 
             modal.destroy()

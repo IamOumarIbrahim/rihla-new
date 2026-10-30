@@ -5,7 +5,7 @@ from .users_welcome import BaseWelcomeScreen
 from screens.event_screen import show_event_screen
 from database import (
     get_all_events, get_bookings_by_customer, cancel_booking, format_ticket_code,
-    create_support_ticket, get_support_tickets_by_customer
+    create_support_ticket, get_support_tickets_by_customer, get_event_capacity
 )
 import theme as t
 
@@ -126,6 +126,7 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
             if tour['is_recurring'] == "Recurring" and tour.get('recur_day') and tour['recur_day'] != "None":
                 schedule_info += f" ({tour['recur_day']})"
             tk.Label(card, text=schedule_info, font=(t.FONT, 8, "italic"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=15, pady=1)
+            tk.Label(card, text=f"👥 Capacity: {get_event_capacity(tour['id'])['total']} guests per date", font=(t.FONT, 8, "italic"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=15, pady=1)
 
             tk.Label(card, text=tour["desc"], font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED, wraplength=280, justify="left").pack(anchor="w", padx=15, pady=6)
             
