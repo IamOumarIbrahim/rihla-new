@@ -10,7 +10,7 @@ from api_client import (  # explicit re-exports for IDE support
     check_login, login, get_role, get_user_email,
     get_all_users, set_user_banned, create_report, get_reports, resolve_report,
     register_user, update_password, email_exists, phone_exists,
-    get_preferred_currency, set_preferred_currency,
+    get_preferred_currency, set_preferred_currency, get_staff_venue, set_staff_venue,
     get_all_venues, get_venues_by_vendor, create_venue, delete_venue,
     get_vendor_categories, add_vendor_category, delete_vendor_category,
     get_all_events, get_events_by_vendor, get_events_by_venue, get_events_today,

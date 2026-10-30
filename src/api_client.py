@@ -77,9 +77,24 @@ def get_role(email):
 # Users
 # -----------------------------------------------------------------------
 
-def register_user(email, password, role="Customer", phone=None, ssn=None):
-    r = _post("/users/register", {"email": email, "password": password, "role": role, "phone": phone, "ssn": ssn})
-    return r.get("success", False)
+def register_user(email, password, role="Customer", phone=None, ssn=None, venue_id=None, manager_email=None):
+    """Returns (True, "") or (False, the reason the server gave)."""
+    r = _post("/users/register", {"email": email, "password": password, "role": role, "phone": phone, "ssn": ssn,
+                                  "venue_id": venue_id, "manager_email": manager_email})
+    return r.get("success", False), r.get("message", "")
+
+
+def get_staff_venue(email):
+    """The venue a staff member works at ({id, name, address, maps_url, manager_email}) or None."""
+    try:
+        return _get(f"/staff/venue/{email}").get("venue")
+    except requests.exceptions.HTTPError:
+        return None
+
+
+def set_staff_venue(email, venue_id, manager_email):
+    """Returns {"success": bool, "message": str}."""
+    return _put("/staff/venue", {"email": email, "venue_id": venue_id, "manager_email": manager_email})
 
 
 def update_password(email, new_password):
@@ -204,8 +219,12 @@ def get_events_by_venue(venue_id):
     return r.get("events", [])
 
 
-def get_events_today():
-    r = _get("/events/today")
+def get_events_today(staff_email):
+    """Today's schedule for the venue this staff member works at."""
+    try:
+        r = _get("/events/today", staff_email=staff_email)
+    except requests.exceptions.HTTPError:
+        return []
     return r.get("events", [])
 
 
@@ -308,8 +327,10 @@ def admin_cancel_booking(booking_id, admin_email, reason):
 # Tickets
 # -----------------------------------------------------------------------
 
-def verify_ticket_code(ticket_code, expected_event_title=None):
-    r = _post("/tickets/verify", {"ticket_code": ticket_code, "expected_event_title": expected_event_title})
+def verify_ticket_code(ticket_code, expected_event_title=None, staff_email=None):
+    """The server only checks in tickets for events at this staff member's venue."""
+    r = _post("/tickets/verify", {"ticket_code": ticket_code, "expected_event_title": expected_event_title,
+                                  "staff_email": staff_email})
     return r
 
 

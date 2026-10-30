@@ -2,6 +2,7 @@ import hashlib
 import hmac
 from datetime import date, datetime
 import os
+import re
 import secrets
 import sqlite3
 from contextlib import contextmanager
@@ -48,6 +49,39 @@ def ssn_error(role, ssn):
         return f"The SSN must be exactly {SSN_LENGTH} digits (0-9)."
     if len(set(ssn)) == 1:
         return "Please enter your real SSN."
+    return None
+
+
+STAFF_ROLE = "Staff"
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+# The demo staff account works at the venue of the demo ticket (New year dinner).
+DEMO_STAFF_VENUE = "Burj Khalifa"
+
+
+def default_manager_email(venue_name):
+    """Made-up manager address for a venue: 'Burj Khalifa' -> 'manager.burjkhalifa@email.com'."""
+    slug = "".join(c for c in (venue_name or "").lower() if c.isascii() and c.isalnum()) or "venue"
+    return f"manager.{slug}@email.com"
+
+
+def staff_venue_error(venue_id, manager_email, conn=None):
+    """None when the venue exists and the manager email looks like an email, otherwise the message to show."""
+    try:
+        venue_id = int(venue_id)
+    except (TypeError, ValueError):
+        return "Please choose the venue you work at."
+    if conn is None:
+        with _connect() as conn:
+            exists = conn.execute("SELECT 1 FROM venues WHERE id = ?", (venue_id,)).fetchone()
+    else:
+        exists = conn.execute("SELECT 1 FROM venues WHERE id = ?", (venue_id,)).fetchone()
+    if not exists:
+        return "That venue does not exist. Please choose one from the list."
+    manager_email = (manager_email or "").strip()
+    if not manager_email:
+        return "Please enter your venue manager's email."
+    if not _EMAIL_RE.match(manager_email):
+        return "The manager email is not a valid email address."
     return None
 
 
@@ -273,6 +307,10 @@ def init_db():
         if "ssn_hash" not in user_columns:
             conn.execute("ALTER TABLE users ADD COLUMN ssn_hash TEXT")
             conn.execute("ALTER TABLE users ADD COLUMN ssn_last4 TEXT")
+        # Staff work at one venue and name its manager; staff made before this get one below.
+        if "venue_id" not in user_columns:
+            conn.execute("ALTER TABLE users ADD COLUMN venue_id INTEGER REFERENCES venues(id)")
+            conn.execute("ALTER TABLE users ADD COLUMN manager_email TEXT")
 
         booking_columns = [row[1] for row in conn.execute("PRAGMA table_info(bookings)")]
         if "client_name" not in booking_columns:
@@ -402,24 +440,81 @@ def init_db():
             ).fetchone()[0]
             conn.execute("UPDATE users SET created_at = ? WHERE rowid = ?", (first_seen or _now(), rowid))
 
+        # Staff without a venue (made before venues were assigned, or whose venue was deleted): the demo
+        # staff account goes to the demo ticket's venue, anyone else to the first venue; the manager email
+        # is a made-up address for that venue until they change it in Settings.
+        venues = conn.execute("SELECT id, name FROM venues ORDER BY id").fetchall()
+        if venues:
+            demo_venue = next((v for v in venues if v[1] == DEMO_STAFF_VENUE), venues[0])
+            demo_staff_email = DEMO_ACCOUNTS[STAFF_ROLE][0].lower()
+            unassigned = conn.execute(
+                "SELECT rowid, lower(email) FROM users WHERE role = ? AND "
+                "(venue_id IS NULL OR venue_id NOT IN (SELECT id FROM venues))", (STAFF_ROLE,)
+            ).fetchall()
+            for rowid, user_email in unassigned:
+                venue = demo_venue if user_email == demo_staff_email else venues[0]
+                conn.execute("UPDATE users SET venue_id = ? WHERE rowid = ?", (venue[0], rowid))
+            names = dict(venues)
+            for rowid, venue_id in conn.execute(
+                "SELECT rowid, venue_id FROM users WHERE role = ? AND (manager_email IS NULL OR manager_email = '')",
+                (STAFF_ROLE,),
+            ).fetchall():
+                conn.execute("UPDATE users SET manager_email = ? WHERE rowid = ?",
+                             (default_manager_email(names.get(venue_id)), rowid))
 
-def register_user(email, password, role="Customer", phone=None, ssn=None):
+
+def register_user(email, password, role="Customer", phone=None, ssn=None, venue_id=None, manager_email=None):
     if role not in SIGNUP_ROLES:
         role = "Customer"
     email = (email or "").strip().lower()
     if not email or not password or email_exists(email) or ssn_error(role, ssn):
         return False
+    if role == STAFF_ROLE:
+        if staff_venue_error(venue_id, manager_email):
+            return False
+        venue_id, manager_email = int(venue_id), manager_email.strip()
+    else:
+        venue_id, manager_email = None, None
     ssn = clean_ssn(ssn) if role != "Customer" else ""
     try:
         with _connect() as conn:
             conn.execute(
-                "INSERT INTO users (email, password, role, phone, created_at, ssn_hash, ssn_last4) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO users (email, password, role, phone, created_at, ssn_hash, ssn_last4, venue_id, manager_email) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (email, hash_password(password), role, phone, _now(),
-                 hash_password(ssn) if ssn else None, ssn[-4:] if ssn else None),
+                 hash_password(ssn) if ssn else None, ssn[-4:] if ssn else None, venue_id, manager_email),
             )
         return True
     except sqlite3.IntegrityError:
         return False
+
+
+def get_staff_venue(email):
+    """The venue a (not banned) staff account works at, with its manager email, or None."""
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT v.id, v.name, v.address, v.maps_url, u.manager_email FROM users u JOIN venues v ON v.id = u.venue_id "
+            "WHERE lower(u.email) = lower(?) AND u.role = ? AND u.banned = 0",
+            ((email or "").strip(), STAFF_ROLE),
+        ).fetchone()
+    if row is None:
+        return None
+    return {"id": row[0], "name": row[1], "address": row[2], "maps_url": row[3] or "", "manager_email": row[4] or ""}
+
+
+def set_staff_venue(email, venue_id, manager_email):
+    """A staff member moves to another venue and/or names a new manager. Returns {"success", "message"}."""
+    email = (email or "").strip()
+    with _connect() as conn:
+        row = conn.execute("SELECT role, banned FROM users WHERE lower(email) = lower(?)", (email,)).fetchone()
+        if row is None or row[0] != STAFF_ROLE or row[1]:
+            return {"success": False, "message": "Only staff accounts work at a venue."}
+        problem = staff_venue_error(venue_id, manager_email, conn)
+        if problem:
+            return {"success": False, "message": problem}
+        conn.execute("UPDATE users SET venue_id = ?, manager_email = ? WHERE lower(email) = lower(?)",
+                     (int(venue_id), manager_email.strip(), email))
+    return {"success": True, "message": "Your venue and manager email were saved."}
 
 
 def login_status(email, password):
@@ -458,11 +553,15 @@ def get_all_users(admin_email):
         return None
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT email, role, created_at, banned, banned_at, banned_by FROM users "
-            "ORDER BY created_at DESC, lower(email)"
+            "SELECT u.email, u.role, u.created_at, u.banned, u.banned_at, u.banned_by, v.name, u.manager_email "
+            "FROM users u LEFT JOIN venues v ON v.id = u.venue_id "
+            "ORDER BY u.created_at DESC, lower(u.email)"
         ).fetchall()
+    # Venue and manager email only mean something for staff; everyone else gets blanks.
     return [{"email": r[0], "role": r[1] or "Customer", "created_at": r[2] or "", "banned": bool(r[3]),
-             "banned_at": r[4] or "", "banned_by": r[5] or ""} for r in rows]
+             "banned_at": r[4] or "", "banned_by": r[5] or "",
+             "venue_name": (r[6] or "") if r[1] == STAFF_ROLE else "",
+             "manager_email": (r[7] or "") if r[1] == STAFF_ROLE else ""} for r in rows]
 
 
 def set_user_banned(admin_email, email, banned=True):

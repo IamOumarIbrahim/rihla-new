@@ -68,10 +68,13 @@ def register():
     role = body.get("role", "Customer")
     if role in core.SIGNUP_ROLES:
         problem = core.ssn_error(role, body.get("ssn"))
+        if role == core.STAFF_ROLE and not problem:
+            problem = core.staff_venue_error(body.get("venue_id"), body.get("manager_email"))
         if problem:
             return _err(problem)
     ok = core.register_user(body.get("email", ""), body.get("password", ""),
-                            role, body.get("phone"), body.get("ssn"))
+                            role, body.get("phone"), body.get("ssn"),
+                            body.get("venue_id"), body.get("manager_email"))
     if ok:
         return _ok({"message": "Registered."})
     return _err("Registration failed – email already exists or invalid data.")
@@ -95,6 +98,23 @@ def set_currency():
     if core.set_currency(body.get("email", ""), body.get("currency", "")):
         return _ok({"message": "Currency updated."})
     return _err("Unknown user or unsupported currency.")
+
+
+@app.route("/api/staff/venue/<path:email>")
+def get_staff_venue(email):
+    venue = core.get_staff_venue(email)
+    if venue is None:
+        return _err("This account is not staff at a venue.", 404)
+    return _ok({"venue": venue})
+
+
+@app.route("/api/staff/venue", methods=["PUT"])
+def set_staff_venue():
+    body = request.get_json(silent=True) or {}
+    result = core.set_staff_venue(body.get("email", ""), body.get("venue_id"), body.get("manager_email", ""))
+    if result["success"]:
+        return _ok(result)
+    return _err(result["message"])
 
 
 @app.route("/api/users/email_exists/<path:email>")
@@ -201,7 +221,7 @@ def delete_venue(venue_id):
     ok = events.delete_venue(venue_id)
     if ok:
         return _ok({"message": "Deleted."})
-    return _err("Venue is in use by events and cannot be deleted.")
+    return _err("Venue is in use by events or staff and cannot be deleted.")
 
 
 # -----------------------------------------------------------------------
@@ -249,7 +269,11 @@ def get_events_by_venue(venue_id):
 
 @app.route("/api/events/today")
 def get_events_today():
-    return _ok({"events": events.get_events_today()})
+    # Only staff read the day's schedule, and only for the venue they work at.
+    schedule = events.get_staff_schedule(request.args.get("staff_email", ""))
+    if schedule is None:
+        return _err("Only staff assigned to a venue can see its schedule.", 403)
+    return _ok({"events": schedule})
 
 
 @app.route("/api/events", methods=["POST"])
@@ -386,7 +410,8 @@ def admin_cancel_booking(booking_id):
 @app.route("/api/tickets/verify", methods=["POST"])
 def verify_ticket():
     body = request.get_json(silent=True) or {}
-    result = events.verify_ticket_code(body.get("ticket_code", ""), body.get("expected_event_title"))
+    result = events.staff_verify_ticket(body.get("staff_email", ""), body.get("ticket_code", ""),
+                                        body.get("expected_event_title"))
     if result["success"]:
         return _ok(result)
     return _err(result["message"])

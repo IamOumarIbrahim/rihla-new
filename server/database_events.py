@@ -1,6 +1,6 @@
 from datetime import date, datetime, time as dtime
 import secrets
-from database_core import _connect, _now, is_admin, get_role, DEFAULT_EVENT_CAPACITY, MAX_EVENT_CAPACITY, MAX_GUESTS_PER_BOOKING
+from database_core import _connect, _now, is_admin, get_role, get_staff_venue, DEFAULT_EVENT_CAPACITY, MAX_EVENT_CAPACITY, MAX_GUESTS_PER_BOOKING
 
 
 # Mandatory VAT added on top of every booking's base price.
@@ -61,9 +61,12 @@ def create_venue(name, address, vendor_email, maps_url=""):
 
 
 def delete_venue(venue_id):
-    """Returns False (and deletes nothing) while events still use this venue."""
+    """Returns False (and deletes nothing) while events still use this venue or staff work there."""
     with _connect() as conn:
-        in_use = conn.execute("SELECT 1 FROM events WHERE venue_id = ? LIMIT 1", (venue_id,)).fetchone()
+        in_use = conn.execute(
+            "SELECT 1 FROM events WHERE venue_id = ? UNION ALL SELECT 1 FROM users WHERE venue_id = ? LIMIT 1",
+            (venue_id, venue_id),
+        ).fetchone()
         if in_use:
             return False
         conn.execute("DELETE FROM venues WHERE id = ?", (venue_id,))
@@ -203,15 +206,17 @@ def get_event_demand(event_id):
     return (row[0], row[1]) if row else (0, 0)
 
 
-def get_events_today():
+def get_events_today(venue_id=None):
+    """Today's events with their bookings and check-ins; venue_id keeps only that venue's events."""
     today = date.today().isoformat()
     weekday = date.today().strftime("%A")
     with _connect() as conn:
         rows = conn.execute('''
             SELECT e.id, e.title, e.event_datetime, e.recur_time, e.is_recurring, e.recur_day, v.name, v.maps_url
             FROM events e LEFT JOIN venues v ON v.id = e.venue_id
+            WHERE ? IS NULL OR e.venue_id = ?
             ORDER BY e.title
-        ''').fetchall()
+        ''', (venue_id, venue_id)).fetchall()
 
         result = []
         for r in rows:
@@ -626,13 +631,28 @@ def admin_cancel_booking(booking_id, admin_email, reason):
     return _cancel(booking_id, admin_email, "Admin", reason, lambda row: None, by_operator=True)
 
 
-def verify_ticket_code(ticket_code, expected_event_title=None):
+def _ticket_venue_id(conn, ticket_code, event_title):
+    """The venue of the event a ticket is for: from its booking, or the event title for a ticket without one."""
+    row = conn.execute(
+        "SELECT e.venue_id FROM bookings b JOIN events e ON e.id = b.event_id WHERE b.ticket_code = ?", (ticket_code,)
+    ).fetchone()
+    if row is None:
+        row = conn.execute("SELECT venue_id FROM events WHERE title = ? ORDER BY id LIMIT 1", (event_title,)).fetchone()
+    return row[0] if row else None
+
+
+def verify_ticket_code(ticket_code, expected_event_title=None, venue_id=None):
+    """Checks a ticket in. With venue_id, a ticket for another venue's event is refused
+    without saying anything about it (staff only see their own venue)."""
     with _connect() as conn:
         row = conn.execute(
             "SELECT event_title, customer_email, status FROM tickets WHERE ticket_code = ?", (ticket_code,)
         ).fetchone()
+        ticket_venue = _ticket_venue_id(conn, ticket_code, row[0]) if row else None
     if not row:
         return {"success": False, "message": "Invalid ticket code. Not found in system."}
+    if venue_id is not None and ticket_venue != venue_id:
+        return {"success": False, "message": "This ticket is not for an event at your venue. Entry refused."}
 
     event_title, customer_email, status = row
     if expected_event_title and event_title != expected_event_title:
@@ -659,6 +679,22 @@ def verify_ticket_code(ticket_code, expected_event_title=None):
         if booking[1] != date.today().isoformat():
             note += f" Note: this booking is for {booking[1]}, not today."
     return {"success": True, "message": f"Access granted! Ticket valid for {event_title} ({customer_email}).{note}"}
+
+
+def staff_verify_ticket(staff_email, ticket_code, expected_event_title=None):
+    """The scanner's check-in: only staff, and only for events at the venue they work at."""
+    venue = get_staff_venue(staff_email)
+    if venue is None:
+        return {"success": False, "message": "Only staff assigned to a venue can check tickets in."}
+    return verify_ticket_code(ticket_code, expected_event_title, venue_id=venue["id"])
+
+
+def get_staff_schedule(staff_email):
+    """Today's schedule for the staff member's own venue, or None if they are not staff at a venue."""
+    venue = get_staff_venue(staff_email)
+    if venue is None:
+        return None
+    return get_events_today(venue["id"])
 
 
 # --- Partner Shopping List (Cart) ---
