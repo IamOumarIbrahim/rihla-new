@@ -440,16 +440,20 @@ def get_support_tickets_by_customer(email):
 
 @app.route("/api/support/open")
 def get_open_support_tickets():
-    return _ok({"tickets": core.get_open_support_tickets()})
+    # Staff only see questions about events at the venue they work at.
+    tickets = core.get_staff_support_tickets(request.args.get("staff_email", ""))
+    if tickets is None:
+        return _err("Only staff assigned to a venue can read support tickets.", 403)
+    return _ok({"tickets": tickets})
 
 
 @app.route("/api/support/<int:ticket_id>/resolve", methods=["POST"])
 def resolve_support_ticket(ticket_id):
     body = request.get_json(silent=True) or {}
-    ok = core.resolve_support_ticket(ticket_id, body.get("staff_email", ""))
+    ok = core.staff_resolve_support_ticket(ticket_id, body.get("staff_email", ""))
     if ok:
         return _ok({"message": "Resolved."})
-    return _err("Could not resolve (already resolved or not found).")
+    return _err("Could not resolve (already resolved, not found, or not for your venue).")
 
 
 # -----------------------------------------------------------------------

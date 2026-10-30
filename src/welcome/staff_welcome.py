@@ -145,9 +145,9 @@ class StaffWelcomeScreen(BaseWelcomeScreen):
         self.render_support_list()
 
     def render_support_list(self):
-        tickets = get_open_support_tickets()
+        tickets = get_open_support_tickets(self.email)  # the server only returns this staff member's venue
         if not tickets:
-            tk.Label(self.scrollable_frame, text="No open support tickets at the moment.", font=(t.FONT, 11), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30)
+            tk.Label(self.scrollable_frame, text="No open support tickets for your venue at the moment.", font=(t.FONT, 11), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30)
             return
         for ticket in tickets:
             card = tk.Frame(self.scrollable_frame, bg=t.CARD_BG, bd=1, relief="solid", highlightbackground=t.BORDER)

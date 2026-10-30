@@ -354,8 +354,12 @@ def get_support_tickets_by_customer(customer_email):
     return r.get("tickets", [])
 
 
-def get_open_support_tickets():
-    r = _get("/support/open")
+def get_open_support_tickets(staff_email):
+    """Open support tickets about events at this staff member's venue."""
+    try:
+        r = _get("/support/open", staff_email=staff_email)
+    except requests.exceptions.HTTPError:
+        return []
     return r.get("tickets", [])
 
 

@@ -689,24 +689,61 @@ def get_support_tickets_by_customer(customer_email):
     return [{"id": r[0], "subject": r[1], "message": r[2], "status": r[3], "created_at": r[4], "event_title": r[5] or ""} for r in rows]
 
 
-def get_open_support_tickets():
-    """Oldest first, so the longest waiting customer is answered first."""
+# A support ticket belongs to the venue of the event it names. An event that has since been deleted is
+# found through its bookings (they keep the venue name). Old tickets that name no event are general
+# questions any staff member may answer.
+_TICKET_AT_VENUE = (
+    "(t.event_title = '' OR t.event_title IS NULL "
+    "OR EXISTS (SELECT 1 FROM events e WHERE e.title = t.event_title AND e.venue_id = :venue) "
+    "OR (NOT EXISTS (SELECT 1 FROM events e WHERE e.title = t.event_title) "
+    "AND EXISTS (SELECT 1 FROM bookings b JOIN venues v ON v.name = b.venue_name "
+    "WHERE b.event_title = t.event_title AND v.id = :venue)))"
+)
+
+
+def _staff_venue_id(staff_email):
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT venue_id FROM users WHERE lower(email) = lower(?) AND role = ? AND banned = 0 AND venue_id IS NOT NULL",
+            ((staff_email or "").strip(), STAFF_ROLE),
+        ).fetchone()
+    return row[0] if row else None
+
+
+def get_open_support_tickets(venue_id=None):
+    """Oldest first, so the longest waiting customer is answered first. venue_id keeps that venue's tickets."""
+    where = "t.status = 'Open'" + ("" if venue_id is None else f" AND {_TICKET_AT_VENUE}")
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT id, customer_email, subject, message, created_at, event_title FROM support_tickets "
-            "WHERE status = 'Open' ORDER BY id"
+            "SELECT t.id, t.customer_email, t.subject, t.message, t.created_at, t.event_title FROM support_tickets t "
+            f"WHERE {where} ORDER BY t.id", {"venue": venue_id}
         ).fetchall()
     return [{"id": r[0], "customer_email": r[1], "subject": r[2], "message": r[3], "created_at": r[4], "event_title": r[5] or ""} for r in rows]
 
 
-def resolve_support_ticket(ticket_id, staff_email):
+def resolve_support_ticket(ticket_id, staff_email, venue_id=None):
+    """venue_id: only a ticket for that venue can be resolved."""
+    where = "id = :id AND status = 'Open'"
+    if venue_id is not None:
+        where += f" AND id IN (SELECT t.id FROM support_tickets t WHERE {_TICKET_AT_VENUE})"
     with _connect() as conn:
         updated = conn.execute(
-            "UPDATE support_tickets SET status = 'Resolved', resolved_by = ?, resolved_at = CURRENT_TIMESTAMP "
-            "WHERE id = ? AND status = 'Open'",
-            ((staff_email or "").strip(), ticket_id),
+            f"UPDATE support_tickets SET status = 'Resolved', resolved_by = :staff, resolved_at = CURRENT_TIMESTAMP WHERE {where}",
+            {"staff": (staff_email or "").strip(), "id": ticket_id, "venue": venue_id},
         ).rowcount
     return bool(updated)
+
+
+def get_staff_support_tickets(staff_email):
+    """Open support tickets for the staff member's venue, or None if they are not staff at a venue."""
+    venue_id = _staff_venue_id(staff_email)
+    return None if venue_id is None else get_open_support_tickets(venue_id)
+
+
+def staff_resolve_support_ticket(ticket_id, staff_email):
+    """Staff resolve only tickets about their own venue's events."""
+    venue_id = _staff_venue_id(staff_email)
+    return venue_id is not None and resolve_support_ticket(ticket_id, staff_email, venue_id)
 
 
 # --- Reports (any signed-in user except admins files one, admins resolve them) ---

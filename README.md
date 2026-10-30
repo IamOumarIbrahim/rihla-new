@@ -90,7 +90,9 @@ Other useful values:
 - Every staff account works at one venue. The *Venue Operations* page checks tickets in and shows
   today's schedule for that venue only. The server enforces this: a ticket for an event at another
   venue is refused, and the schedule never includes other venues.
-- Staff change their venue and manager email in *Settings*; check-in and the schedule follow at once.
+- *Support Tickets* also only lists (and lets staff resolve) questions about their own venue's events.
+  Old tickets from before customers had to pick an event are shown to all staff.
+- Staff change their venue and manager email in *Settings*; check-in, the schedule and support tickets follow at once.
 - The admin *User Accounts* table shows each staff member's Venue and Manager Email.
 - Staff accounts made before venues were assigned get one automatically when the server starts
   (the demo staff account gets Burj Khalifa, others the first venue) with a placeholder manager email.
@@ -130,7 +132,7 @@ A suggested order for the final demo, about 10 minutes. Run `dummy_data.ps1` rig
      today's schedule for that venue. Check in `1234567890123456`; it admits a ticket once.
    - Log in as nadia.saleh@example.com (Al Qudra Desert Camp) and try the same code: it is refused,
      because the ticket is for another venue. Her schedule shows only Al Qudra events.
-   - *Support Tickets*: the customer message from step 1.
+   - *Support Tickets*: questions about Burj Khalifa events only (nadia.saleh sees the Al Qudra ones).
 4. **Partner** (partner@email.com)
    - *Explore Tours*: add several events for client groups to the cart, then pay for all of them at once.
    - *Partner Bookings*: the group bookings.

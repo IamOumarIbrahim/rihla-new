@@ -128,6 +128,38 @@ class StaffVenueTests(unittest.TestCase):
         self.assertEqual(users[STAFF]["manager_email"], "manager.burjkhalifa@email.com")
         self.assertEqual((users["customer@email.com"]["venue_name"], users["customer@email.com"]["manager_email"]), ("", ""))
 
+    def test_support_tickets_are_scoped_to_the_staff_venue(self):
+        message = "A message that is long enough"
+        core.create_support_ticket("a@email.com", "Burj question", message, "Sky lounge tonight")
+        core.create_support_ticket("a@email.com", "Desert question", message, "Desert dinner tonight")
+        with core._connect() as conn:  # an old ticket from before tickets had to name an event
+            conn.execute("INSERT INTO support_tickets (customer_email, subject, message) VALUES ('old@email.com', 'General', 'Hi')")
+        tickets = {t["subject"]: t["id"] for t in core.get_open_support_tickets()}
+
+        r = self.client.get("/api/support/open", query_string={"staff_email": STAFF})
+        self.assertEqual({t["subject"] for t in r.get_json()["tickets"]}, {"Burj question", "General"})
+        self.assertEqual(self.client.get("/api/support/open").status_code, 403)
+        self.assertEqual(self.client.get("/api/support/open", query_string={"staff_email": "customer@email.com"}).status_code, 403)
+
+        # Another venue's ticket cannot be resolved, even by calling the API directly.
+        r = self.client.post(f"/api/support/{tickets['Desert question']}/resolve", json={"staff_email": STAFF})
+        self.assertFalse(r.get_json()["success"])
+        self.assertFalse(core.staff_resolve_support_ticket(tickets["Desert question"], "vendor@email.com"))
+        self.assertTrue(core.staff_resolve_support_ticket(tickets["Burj question"], STAFF))
+
+        # After moving venue the staff member sees the desert ticket instead.
+        core.set_staff_venue(STAFF, self.desert, "m@v.ae")
+        self.assertEqual({t["subject"] for t in core.get_staff_support_tickets(STAFF)}, {"Desert question", "General"})
+        self.assertTrue(core.staff_resolve_support_ticket(tickets["Desert question"], STAFF))
+
+    def test_support_ticket_for_a_deleted_event_stays_with_its_venue(self):
+        core.create_support_ticket("guest@email.com", "Refund?", "A message that is long enough", "Desert dinner tonight")
+        event_id = [e for e in ev.get_all_events() if e["title"] == "Desert dinner tonight"][0]["id"]
+        ev.delete_event(event_id)
+        self.register_staff(venue_id=self.desert)
+        self.assertEqual([t["subject"] for t in core.get_staff_support_tickets("new.staff@email.com")], ["Refund?"])
+        self.assertEqual(core.get_staff_support_tickets(STAFF), [])
+
     def test_old_database_staff_get_a_venue_and_manager(self):
         old_path = os.path.join(self.tmp.name, "old.db")
         conn = sqlite3.connect(old_path)

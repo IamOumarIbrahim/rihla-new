@@ -180,8 +180,12 @@ PARTNER_CART = [
     ("rooftop", None, 10, "Emirates Business Club"),
 ]
 
-# email, event key, subject, message, resolved?
+# email, event key, subject, message, resolved? (staff only see tickets for their own venue's events)
 SUPPORT_TICKETS = [
+    (CUSTOMER, "sky", "Wheelchair access at the top",
+     "My father uses a wheelchair. Is the lounge on level 152 step-free from the lift?", False),
+    ("sofia.rossi@example.com", "sky", "Dress code",
+     "Is there a dress code for the sky lounge evening? We are coming straight from the beach.", False),
     (CUSTOMER, "camp", "Change pickup location",
      "Could the transfer pick us up from our hotel in JBR instead of Downtown? Thank you.", False),
     (CUSTOMER, "rooftop", "Dietary requirements",
