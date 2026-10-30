@@ -3,6 +3,17 @@ import secrets
 from database_core import _connect, DEFAULT_EVENT_CAPACITY, MAX_EVENT_CAPACITY, MAX_GUESTS_PER_BOOKING
 
 
+# Mandatory VAT added on top of every booking's base price.
+VAT_RATE = 0.05
+
+
+def add_vat(base_price):
+    """Returns (base, vat, total) rounded to 2 decimals."""
+    base = round(float(base_price or 0), 2)
+    vat = round(base * VAT_RATE, 2)
+    return base, vat, round(base + vat, 2)
+
+
 def price_to_int(price_text):
     """Turns '240 AED' or 240 into the integer 240."""
     digits = "".join(c for c in str(price_text) if c in "0123456789")
@@ -27,19 +38,19 @@ def _new_ticket_code(conn):
 # --- Venues ---
 def get_all_venues():
     with _connect() as conn:
-        rows = conn.execute("SELECT id, name, address FROM venues").fetchall()
-    return [{"id": r[0], "name": r[1], "address": r[2]} for r in rows]
+        rows = conn.execute("SELECT id, name, address, maps_url FROM venues").fetchall()
+    return [{"id": r[0], "name": r[1], "address": r[2], "maps_url": r[3] or ""} for r in rows]
 
 
 def get_venues_by_vendor(vendor_email):
     with _connect() as conn:
-        rows = conn.execute("SELECT id, name, address FROM venues WHERE vendor_email = ?", (vendor_email,)).fetchall()
-    return [{"id": r[0], "name": r[1], "address": r[2]} for r in rows]
+        rows = conn.execute("SELECT id, name, address, maps_url FROM venues WHERE vendor_email = ?", (vendor_email,)).fetchall()
+    return [{"id": r[0], "name": r[1], "address": r[2], "maps_url": r[3] or ""} for r in rows]
 
 
-def create_venue(name, address, vendor_email):
+def create_venue(name, address, vendor_email, maps_url=""):
     with _connect() as conn:
-        conn.execute("INSERT INTO venues (name, address, vendor_email) VALUES (?, ?, ?)", (name, address, vendor_email))
+        conn.execute("INSERT INTO venues (name, address, vendor_email, maps_url) VALUES (?, ?, ?, ?)", (name, address, vendor_email, maps_url))
 
 
 def delete_venue(venue_id):
@@ -99,19 +110,19 @@ def create_event(title, category, price, description, vendor_email, venue_id, ev
 def get_all_events():
     with _connect() as conn:
         rows = conn.execute('''
-            SELECT e.id, e.title, e.category, e.price, e.description, e.vendor_email, v.name, e.event_datetime, e.is_recurring, e.recur_day, e.recur_time, e.venue_id, e.capacity
+            SELECT e.id, e.title, e.category, e.price, e.description, e.vendor_email, v.name, e.event_datetime, e.is_recurring, e.recur_day, e.recur_time, e.venue_id, e.capacity, v.maps_url
             FROM events e LEFT JOIN venues v ON e.venue_id = v.id
         ''').fetchall()
-    return [{"id": r[0], "title": r[1], "category": r[2], "price": r[3], "desc": r[4], "vendor_email": r[5], "venue_name": r[6], "event_datetime": r[7], "is_recurring": r[8], "recur_day": r[9], "recur_time": r[10], "venue_id": r[11], "capacity": r[12]} for r in rows]
+    return [{"id": r[0], "title": r[1], "category": r[2], "price": r[3], "desc": r[4], "vendor_email": r[5], "venue_name": r[6], "event_datetime": r[7], "is_recurring": r[8], "recur_day": r[9], "recur_time": r[10], "venue_id": r[11], "capacity": r[12], "maps_url": r[13] or ""} for r in rows]
 
 
 def get_events_by_vendor(vendor_email):
     with _connect() as conn:
         rows = conn.execute('''
-            SELECT e.id, e.title, e.category, e.price, e.description, e.vendor_email, v.name, e.event_datetime, e.is_recurring, e.recur_day, e.recur_time, e.venue_id, e.capacity
+            SELECT e.id, e.title, e.category, e.price, e.description, e.vendor_email, v.name, e.event_datetime, e.is_recurring, e.recur_day, e.recur_time, e.venue_id, e.capacity, v.maps_url
             FROM events e LEFT JOIN venues v ON e.venue_id = v.id WHERE e.vendor_email = ?
         ''', (vendor_email,)).fetchall()
-    return [{"id": r[0], "title": r[1], "category": r[2], "price": r[3], "desc": r[4], "vendor_email": r[5], "venue_name": r[6], "event_datetime": r[7], "is_recurring": r[8], "recur_day": r[9], "recur_time": r[10], "venue_id": r[11], "capacity": r[12]} for r in rows]
+    return [{"id": r[0], "title": r[1], "category": r[2], "price": r[3], "desc": r[4], "vendor_email": r[5], "venue_name": r[6], "event_datetime": r[7], "is_recurring": r[8], "recur_day": r[9], "recur_time": r[10], "venue_id": r[11], "capacity": r[12], "maps_url": r[13] or ""} for r in rows]
 
 
 def get_events_by_venue(venue_id):
@@ -183,14 +194,14 @@ def get_events_today():
     weekday = date.today().strftime("%A")
     with _connect() as conn:
         rows = conn.execute('''
-            SELECT e.id, e.title, e.event_datetime, e.recur_time, e.is_recurring, e.recur_day, v.name
+            SELECT e.id, e.title, e.event_datetime, e.recur_time, e.is_recurring, e.recur_day, v.name, v.maps_url
             FROM events e LEFT JOIN venues v ON v.id = e.venue_id
             ORDER BY e.title
         ''').fetchall()
 
         result = []
         for r in rows:
-            eid, title, dt, recur_time, is_rec, recur_day, venue_name = r
+            eid, title, dt, recur_time, is_rec, recur_day, venue_name, maps_url = r
             occurs_today = False
             if is_rec == "Recurring":
                 occurs_today = weekday in [d.strip() for d in (recur_day or "").split(",")]
@@ -215,7 +226,7 @@ def get_events_today():
             ).fetchone()[0]
 
             result.append({
-                "id": eid, "title": title, "venue_name": venue_name,
+                "id": eid, "title": title, "venue_name": venue_name, "maps_url": maps_url or "",
                 "time": recur_time or (dt or "")[11:16],
                 "bookings": bookings_count, "guests": guests_count, "checked_in": checked_in,
             })
@@ -287,9 +298,8 @@ def dispatch_vehicle_combination(event_id, vehicle_assignments):
 
 
 def free_vehicle(vehicle_id):
-    with _connect() as conn:
-        conn.execute("UPDATE event_vehicles SET status = 'Concluded' WHERE vehicle_id = ? AND status = 'Assigned'", (vehicle_id,))
-        conn.execute("UPDATE vehicles SET status = 'Available' WHERE id = ?", (vehicle_id,))
+    """Make a vehicle Available again; this also ends any event assignment it had."""
+    update_vehicle_status(vehicle_id, "Available")
 
 
 def get_dispatches_by_event(event_id):
@@ -403,7 +413,7 @@ def create_booking(customer_email, event_id, booking_date, guests, is_partner=Fa
             )
 
         code = _new_ticket_code(conn)
-        total = price_to_int(price) * guests
+        base, vat, total = add_vat(price_to_int(price) * guests)
         event_time = recur_time or str(event_datetime or "")[11:16]
 
         conn.execute(
@@ -423,7 +433,7 @@ def create_booking(customer_email, event_id, booking_date, guests, is_partner=Fa
         "booking": {
             "id": booking_id, "event_title": title, "venue_name": venue_name, "booking_date": day.isoformat(),
             "event_time": event_time, "guests": guests, "total_price": total, "ticket_code": code,
-            "client_name": client_name,
+            "client_name": client_name, "base_price": base, "vat": vat,
         },
     }
 
@@ -657,3 +667,161 @@ def checkout_cart(partner_email):
 
     clear_cart(partner_email)
     return {"success": True, "message": f"Successfully confirmed {len(booked_results)} event booking(s)!", "bookings": booked_results}
+
+
+# --- Reviews (My Experiences) ---
+# A customer can review a past experience: one that was checked in, or whose date has passed.
+REVIEWABLE_STATUSES = ("Checked in", "Expired")
+MAX_REVIEW_COMMENT = 500
+
+
+def _ensure_reviews_table(conn):
+    """Creates the reviews table the first time it is needed (old databases keep working)."""
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS reviews (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            booking_id INTEGER NOT NULL UNIQUE,
+            event_id INTEGER,
+            customer_email TEXT NOT NULL,
+            rating REAL NOT NULL,
+            comment TEXT NOT NULL DEFAULT '',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(booking_id) REFERENCES bookings(id)
+        )
+    ''')
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_reviews_event ON reviews(event_id)")
+
+
+def get_my_experiences(customer_email):
+    """Past bookings of a customer, newest first. Each one has review_rating and review_comment (None if no review yet)."""
+    experiences = [b for b in get_bookings_by_customer(customer_email) if b["status"] in REVIEWABLE_STATUSES]
+    experiences.reverse()
+
+    with _connect() as conn:
+        _ensure_reviews_table(conn)
+        rows = conn.execute(
+            "SELECT booking_id, rating, comment FROM reviews WHERE lower(customer_email) = lower(?)",
+            ((customer_email or "").strip(),),
+        ).fetchall()
+
+    reviews = {r[0]: (r[1], r[2]) for r in rows}
+    for booking in experiences:
+        rating, comment = reviews.get(booking["id"], (None, ""))
+        booking["review_rating"] = rating
+        booking["review_comment"] = comment
+    return experiences
+
+
+def submit_review(customer_email, booking_id, rating, comment=""):
+    """Saves a review (rating 0 to 5 in steps of 0.5). A second call for the same booking updates the review."""
+    def refuse(message):
+        return {"success": False, "message": message}
+
+    try:
+        booking_id = int(booking_id)
+        rating = float(rating)
+    except (TypeError, ValueError):
+        return refuse("Please choose a rating from 0 to 5.")
+    if rating < 0 or rating > 5 or (rating * 2) != int(rating * 2):
+        return refuse("The rating must be from 0 to 5, in steps of 0.5.")
+
+    comment = (comment or "").strip()
+    if len(comment) > MAX_REVIEW_COMMENT:
+        return refuse(f"Your comment is too long (maximum {MAX_REVIEW_COMMENT} characters).")
+
+    customer_email = (customer_email or "").strip()
+    allowed = {b["id"]: b for b in get_bookings_by_customer(customer_email) if b["status"] in REVIEWABLE_STATUSES}
+    booking = allowed.get(booking_id)
+    if not booking:
+        return refuse("You can only review experiences that you already attended.")
+
+    with _connect() as conn:
+        _ensure_reviews_table(conn)
+        conn.execute(
+            "INSERT INTO reviews (booking_id, event_id, customer_email, rating, comment) VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(booking_id) DO UPDATE SET rating = excluded.rating, comment = excluded.comment, "
+            "updated_at = CURRENT_TIMESTAMP",
+            (booking_id, booking["event_id"], customer_email, rating, comment),
+        )
+    return {"success": True, "message": "Thank you for your review!"}
+
+
+def get_event_ratings():
+    """Average rating and number of reviews for every reviewed event.
+    Result: {event_id: {"average": 4.3, "count": 2}}. Events with no reviews are not in the result.
+    The average is rounded to 1 decimal, with .x5 rounded up (4.25 becomes 4.3).
+    """
+    from decimal import Decimal, ROUND_HALF_UP
+
+    with _connect() as conn:
+        _ensure_reviews_table(conn)
+        rows = conn.execute(
+            "SELECT event_id, AVG(rating), COUNT(*) FROM reviews WHERE event_id IS NOT NULL GROUP BY event_id"
+        ).fetchall()
+
+    ratings = {}
+    for event_id, average, count in rows:
+        rounded = Decimal(str(round(average, 4))).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+        ratings[event_id] = {"average": float(rounded), "count": count}
+    return ratings
+
+
+# --- Venue map links ---
+MAX_MAPS_URL_LENGTH = 500
+
+
+def validate_maps_url(url):
+    """Checks the optional Google Maps link of a venue. Returns (clean_url, error_message).
+    An empty link is fine. Only https links to Google Maps are accepted.
+    """
+    import re
+    from urllib.parse import urlparse
+
+    url = (url or "").strip()
+    if not url:
+        return "", None
+    if len(url) > MAX_MAPS_URL_LENGTH:
+        return "", f"The map link is too long (maximum {MAX_MAPS_URL_LENGTH} characters)."
+    if re.search(r"\s", url):
+        return "", "The map link must not contain spaces."
+
+    if url.lower().startswith("http://"):
+        url = "https://" + url[7:]
+    elif "://" not in url:
+        url = "https://" + url
+
+    message = "Please use a Google Maps link, for example https://maps.app.goo.gl/... or https://www.google.com/maps/..."
+    try:
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower()
+    except ValueError:
+        return "", message
+    path = parsed.path or ""
+
+    google_host = re.fullmatch(r"(?:[a-z0-9-]+\.)*google\.(?:com|co\.[a-z]{2}|com\.[a-z]{2}|[a-z]{2})", host)
+    is_maps = parsed.scheme == "https" and "@" not in parsed.netloc and bool(
+        host == "maps.app.goo.gl"
+        or (host == "goo.gl" and path.startswith("/maps"))
+        or (google_host and path.startswith("/maps"))
+        or (google_host and host.startswith("maps.") and path in ("", "/"))
+    )
+    if not is_maps:
+        return "", message
+    return url, None
+
+
+def update_venue_maps_url(venue_id, vendor_email, maps_url):
+    """A vendor can add, change or remove the map link of one of their own venues."""
+    cleaned, problem = validate_maps_url(maps_url)
+    if problem:
+        return {"success": False, "message": problem}
+
+    with _connect() as conn:
+        cursor = conn.execute(
+            "UPDATE venues SET maps_url = ? WHERE id = ? AND lower(vendor_email) = lower(?)",
+            (cleaned, venue_id, (vendor_email or "").strip()),
+        )
+        if cursor.rowcount == 0:
+            return {"success": False, "message": "Venue not found, or it belongs to another vendor."}
+    return {"success": True, "message": "Map link saved." if cleaned else "Map link removed.", "maps_url": cleaned}

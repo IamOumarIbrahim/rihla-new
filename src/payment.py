@@ -1,7 +1,10 @@
+from datetime import datetime
 import secrets
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import ttk
 import theme as t
+from pricing import CURRENCIES, VAT_RATE, normalize_currency, vat_breakdown, format_money
+from booking_pdf import save_pdf
 
 # Hardcoded demo numbers and credentials
 DEMO_PAYMENT_DETAILS = {
@@ -91,10 +94,24 @@ def verify_demo_payment(method, details):
     return False, "Unsupported payment method."
 
 
-def show_demo_payment_modal(parent, title, items, total_amount, on_success):
+def _preferred_currency(email):
+    if not email:
+        return "AED"
+    try:
+        from database import get_preferred_currency
+        return normalize_currency(get_preferred_currency(email))
+    except Exception:
+        return "AED"
+
+
+def show_demo_payment_modal(parent, title, items, total_amount, on_success, email=None):
+    """items[...]["total"] and total_amount are base prices in AED, before VAT.
+    on_success receives {"txn_id", "method", "currency"}."""
+    base, vat, total = vat_breakdown(total_amount)
+
     modal = tk.Toplevel(parent)
     modal.title(f"Payment - {title}")
-    modal.geometry("500x560")
+    modal.geometry("520x680")
     modal.transient(parent)
     modal.grab_set()
     modal.configure(bg=t.CARD_BG)
@@ -115,20 +132,38 @@ def show_demo_payment_modal(parent, title, items, total_amount, on_success):
     tk.Label(summary_box, text=f"Order Summary ({len(items)} event{'s' if len(items) > 1 else ''})",
              font=(t.FONT, 10, "bold"), bg=t.FIELD_BG, fg=t.TEXT).pack(anchor="w")
 
+    currency_var = tk.StringVar(value=_preferred_currency(email))
+
+    currency_row = tk.Frame(summary_box, bg=t.FIELD_BG)
+    currency_row.pack(fill=tk.X, pady=(4, 0))
+    tk.Label(currency_row, text="Currency:", font=(t.FONT, 9, "bold"), bg=t.FIELD_BG, fg=t.TEXT).pack(side=tk.LEFT)
+    currency_box = ttk.Combobox(currency_row, textvariable=currency_var, values=CURRENCIES, state="readonly", width=6)
+    currency_box.pack(side=tk.LEFT, padx=(6, 0))
+
     items_frame = tk.Frame(summary_box, bg=t.FIELD_BG)
     items_frame.pack(fill=tk.X, pady=4)
 
+    item_labels = []
     for item in items[:4]:
-        item_line = f"- {item['title']} ({item['date']}) - {item['guests']} guest(s)"
-        if item.get("client_name"):
-            item_line += f" [{item['client_name']}]"
-        item_line += f": {item['total']} AED"
-        tk.Label(items_frame, text=item_line, font=(t.FONT, 9), bg=t.FIELD_BG, fg=t.DARK_SOFT, anchor="w").pack(fill=tk.X)
+        lbl = tk.Label(items_frame, font=(t.FONT, 9), bg=t.FIELD_BG, fg=t.DARK_SOFT, anchor="w")
+        lbl.pack(fill=tk.X)
+        item_labels.append((lbl, item))
 
     if len(items) > 4:
         tk.Label(items_frame, text=f"... and {len(items) - 4} more events", font=(t.FONT, 8, "italic"), bg=t.FIELD_BG, fg=t.TEXT_MUTED).pack(anchor="w")
 
-    tk.Label(summary_box, text=f"Total: {total_amount} AED", font=(t.FONT, 13, "bold"), bg=t.FIELD_BG, fg=t.PRIMARY).pack(anchor="e", pady=(4, 0))
+    totals = tk.Frame(summary_box, bg=t.FIELD_BG)
+    totals.pack(fill=tk.X, pady=(4, 0))
+    total_labels = {}
+    for key, caption, font in (("base", "Base Price:", (t.FONT, 10)),
+                               ("vat", f"VAT ({VAT_RATE:.0%}):", (t.FONT, 10)),
+                               ("total", "Total:", (t.FONT, 13, "bold"))):
+        row = tk.Frame(totals, bg=t.FIELD_BG)
+        row.pack(fill=tk.X)
+        colour = t.PRIMARY if key == "total" else t.TEXT
+        tk.Label(row, text=caption, font=font, bg=t.FIELD_BG, fg=colour).pack(side=tk.LEFT)
+        total_labels[key] = tk.Label(row, font=font, bg=t.FIELD_BG, fg=colour)
+        total_labels[key].pack(side=tk.RIGHT)
 
     # Payment Method Selection
     method_var = tk.StringVar(value="visa")
@@ -227,6 +262,11 @@ def show_demo_payment_modal(parent, title, items, total_amount, on_success):
     btn_row = tk.Frame(modal, bg=t.CARD_BG, padx=20, pady=15)
     btn_row.pack(fill=tk.X, side=tk.BOTTOM)
 
+    # Declines are shown here, inside the payment window, instead of a popup.
+    error_label = tk.Label(modal, text="", font=(t.FONT, 9, "bold"), bg=t.CARD_BG, fg="#c0392b",
+                           wraplength=470, justify="left")
+    error_label.pack(side=tk.BOTTOM, fill=tk.X, padx=20)
+
     def handle_submit():
         m = method_var.get()
         submitted = {"card_type": m}
@@ -235,16 +275,19 @@ def show_demo_payment_modal(parent, title, items, total_amount, on_success):
 
         ok, msg = verify_demo_payment(m, submitted)
         if not ok:
-            messagebox.showerror("Payment Failed", f"Payment Declined:\n{msg}", parent=modal)
+            error_label.config(text=f"Payment declined: {msg}")
             return
 
-        txn_id = f"TXN-{secrets.token_hex(4).upper()}"
-        messagebox.showinfo("Payment Successful", f"Payment of {total_amount} AED approved.\n\nTransaction ID: {txn_id}", parent=modal)
+        payment = {
+            "txn_id": f"TXN-{secrets.token_hex(4).upper()}",
+            "method": {"visa": "Visa", "mastercard": "Mastercard", "bank": "Bank Transfer"}.get(m, m),
+            "currency": currency_var.get(),
+        }
         modal.destroy()
         if on_success:
-            on_success()
+            on_success(payment)
 
-    pay_btn = tk.Button(btn_row, text=f"Pay {total_amount} AED", font=(t.FONT, 11, "bold"),
+    pay_btn = tk.Button(btn_row, font=(t.FONT, 11, "bold"),
                         bg=t.ACCENT, fg="white", relief="flat", cursor="hand2", command=handle_submit)
     pay_btn.pack(side=tk.RIGHT, ipadx=15, ipady=6)
     t.add_hover(pay_btn, t.ACCENT, "#e67e22")
@@ -253,3 +296,128 @@ def show_demo_payment_modal(parent, title, items, total_amount, on_success):
                            relief="flat", cursor="hand2", command=modal.destroy)
     cancel_btn.pack(side=tk.RIGHT, padx=10, ipadx=10, ipady=6)
     t.add_hover(cancel_btn, t.CHIP_BG, t.CHIP_HOVER)
+
+    def refresh_prices(_event=None):
+        cur = currency_var.get()
+        for lbl, item in item_labels:
+            line = f"- {item['title']} ({item['date']}) - {item['guests']} guest(s)"
+            if item.get("client_name"):
+                line += f" [{item['client_name']}]"
+            lbl.config(text=f"{line}: {format_money(item['total'], cur)}")
+        total_labels["base"].config(text=format_money(base, cur))
+        total_labels["vat"].config(text=format_money(vat, cur))
+        total_labels["total"].config(text=format_money(total, cur))
+        pay_btn.config(text=f"Pay {format_money(total, cur)}")
+
+    currency_box.bind("<<ComboboxSelected>>", refresh_prices)
+    refresh_prices()
+
+
+def _receipt_lines(entries, payment, payer_email, error):
+    """Text lines (text, size, bold) shared by the window and the PDF."""
+    cur = normalize_currency((payment or {}).get("currency"))
+    lines = [("Rihla - Booking Details", 18, True),
+             (f"Issued {datetime.now().strftime('%d %b %Y, %I:%M %p')}", 9, False), ("", 6, False)]
+    if error:
+        lines += [("Status: NOT CONFIRMED", 12, True), (f"Reason: {error}", 10, False),
+                  ("Your payment was approved but the booking could not be saved. Please contact support.", 9, False)]
+    else:
+        lines.append(("Status: CONFIRMED", 12, True))
+    lines += [("", 6, False), ("Payment", 13, True)]
+    if payer_email:
+        lines.append((f"Booked by: {payer_email}", 10, False))
+    if payment:
+        lines += [(f"Transaction ID: {payment['txn_id']}", 10, False),
+                  (f"Payment method: {payment['method']}", 10, False),
+                  (f"Currency: {cur}", 10, False)]
+
+    grand_base = 0
+    for n, e in enumerate(entries, start=1):
+        base, vat, total = vat_breakdown(e["base"])
+        grand_base += base
+        lines += [("", 6, False), (f"Event {n}: {e['title']}" if len(entries) > 1 else e["title"], 13, True)]
+        for label, value in (("Venue", e.get("venue")), ("Date", e.get("date")), ("Time", e.get("time")),
+                             ("Guests", e.get("guests")), ("Group / client", e.get("client_name")),
+                             ("Ticket code", e.get("ticket_code"))):
+            if value:
+                lines.append((f"{label}: {value}", 10, False))
+        if len(entries) > 1:
+            lines.append((f"Base {format_money(base, cur)}  |  VAT {format_money(vat, cur)}  |  "
+                          f"Total {format_money(total, cur)}", 10, False))
+
+    base, vat, total = vat_breakdown(grand_base)
+    lines += [("", 6, False), ("Price", 13, True),
+              (f"Base Price: {format_money(base, cur)}", 11, False),
+              (f"VAT ({VAT_RATE:.0%}): {format_money(vat, cur)}", 11, False),
+              (f"Total: {format_money(total, cur)}", 13, True)]
+    if cur != "AED":
+        lines.append((f"Charged in AED: {format_money(total, 'AED')}", 9, False))
+    return lines
+
+
+def show_booking_details_window(parent, entries, payment=None, payer_email=None, error=None, on_close=None):
+    """Shows every event and booking detail after payment, with Download PDF and Close.
+
+    entries: dicts with title, base (AED before VAT) and optional venue, date, time,
+    guests, client_name, ticket_code.
+    """
+    lines = _receipt_lines(entries, payment, payer_email, error)
+
+    win = tk.Toplevel(parent)
+    win.title("Booking Details")
+    win.geometry("560x640")
+    win.transient(parent)
+    win.grab_set()
+    win.configure(bg=t.CARD_BG)
+
+    header_bg = "#c0392b" if error else "#27ae60"
+    header = tk.Frame(win, bg=header_bg, padx=20, pady=12)
+    header.pack(fill=tk.X)
+    tk.Label(header, text="Booking not completed" if error else "Booking confirmed",
+             font=(t.FONT, 14, "bold"), bg=header_bg, fg="white").pack(anchor="w")
+
+    btn_row = tk.Frame(win, bg=t.CARD_BG, padx=20, pady=12)
+    btn_row.pack(fill=tk.X, side=tk.BOTTOM)
+    saved_label = tk.Label(win, text="", font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED,
+                           wraplength=520, justify="left")
+    saved_label.pack(side=tk.BOTTOM, fill=tk.X, padx=20)
+
+    body = tk.Frame(win, bg=t.CARD_BG, padx=20, pady=10)
+    body.pack(fill=tk.BOTH, expand=True)
+    text = tk.Text(body, wrap="word", relief="flat", bg=t.CARD_BG, fg=t.TEXT, font=(t.FONT, 10), padx=4, pady=4)
+    scroll = tk.Scrollbar(body, orient="vertical", command=text.yview)
+    text.configure(yscrollcommand=scroll.set)
+    scroll.pack(side=tk.RIGHT, fill=tk.Y)
+    text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    for size, bold in {(size, bold) for _, size, bold in lines}:
+        text.tag_configure(f"{size}{bold}", font=(t.FONT, max(size - 2, 9), "bold" if bold else "normal"))
+    for line, size, bold in lines[1:]:  # the header already names the window
+        text.insert(tk.END, line + "\n", f"{size}{bold}")
+    text.config(state=tk.DISABLED)
+
+    def download_pdf():
+        name = (payment or {}).get("txn_id") or datetime.now().strftime("%Y%m%d-%H%M%S")
+        try:
+            path = save_pdf(lines, f"Rihla_Booking_{name}.pdf")
+        except OSError as exc:
+            saved_label.config(text=f"Could not save the PDF: {exc}", fg="#c0392b")
+            return
+        saved_label.config(text=f"PDF saved to {path}", fg="#27ae60")
+
+    def close():
+        win.destroy()
+        if on_close:
+            on_close()
+
+    win.protocol("WM_DELETE_WINDOW", close)
+
+    close_btn = tk.Button(btn_row, text="Close", font=(t.FONT, 10), bg=t.CHIP_BG, fg=t.TEXT,
+                          relief="flat", cursor="hand2", command=close)
+    close_btn.pack(side=tk.RIGHT, ipadx=14, ipady=6)
+    t.add_hover(close_btn, t.CHIP_BG, t.CHIP_HOVER)
+
+    pdf_btn = tk.Button(btn_row, text="Download PDF", font=(t.FONT, 11, "bold"), bg=t.PRIMARY, fg="white",
+                        relief="flat", cursor="hand2", command=download_pdf)
+    pdf_btn.pack(side=tk.RIGHT, padx=10, ipadx=14, ipady=6)
+    t.add_hover(pdf_btn, t.PRIMARY, t.PRIMARY_HOVER)
+    return win

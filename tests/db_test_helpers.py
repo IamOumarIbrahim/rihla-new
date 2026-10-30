@@ -15,11 +15,6 @@ _SERVER_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "ser
 if _SERVER_DIR not in sys.path:
     sys.path.insert(0, _SERVER_DIR)
 
-# Also need src/ for config which server copies re-use
-_SRC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
-if _SRC_DIR not in sys.path:
-    sys.path.insert(0, _SRC_DIR)
-
 from database_core import (
     init_db, register_user, check_login, get_role, get_user_email,
     update_password, email_exists, phone_exists,

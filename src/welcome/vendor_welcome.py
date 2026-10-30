@@ -1,23 +1,40 @@
 import os
 from datetime import datetime
 import tkinter as tk
-from tkinter import messagebox, filedialog
+from tkinter import messagebox, filedialog, ttk
+from collections import Counter
 from .users_welcome import BaseWelcomeScreen
+from .table_style import GEAR, TABLE_STYLE, style_tables, heading_text, stripe_tags
 from database import (
     get_events_by_vendor, create_event, update_event, delete_event,
     get_vendor_categories, add_vendor_category, delete_vendor_category,
-    get_venues_by_vendor, create_venue, delete_venue, count_active_bookings,
+    get_venues_by_vendor, create_venue, update_venue_maps_url, delete_venue, count_active_bookings,
     get_bookings_by_vendor, get_event_capacity, DEFAULT_EVENT_CAPACITY, MAX_EVENT_CAPACITY
 )
 import theme as t
 import icons as ic
 import event_images
+from map_link import venue_label
+
+# Columns of the bookings table: (key, heading, width, anchor, filterable)
+BOOKING_COLUMNS = [
+    ("event", "Event", 240, "w", True),
+    ("date", "Date", 110, "center", True),
+    ("time", "Time", 70, "center", False),
+    ("guests", "Guests", 70, "center", False),
+    ("customer", "Customer", 220, "w", True),
+    ("total", "Total (AED)", 110, "e", False),
+    ("status", "Status", 110, "center", True),
+]
+# Rows of these statuses get a text color; Confirmed and Checked in rows keep the normal text color.
+STATUS_COLORS = {"Expired": t.TEXT_MUTED, "Cancelled": "#c0392b"}
 
 
 class VendorWelcomeScreen(BaseWelcomeScreen):
     def __init__(self, root, email):
         super().__init__(root, email, "Vendor")
         self.root = root
+        self.booking_hidden = {}  # column key -> values hidden by its filter
 
         self.add_nav_button("My Events", self.build_vendor_content, icon="calendar")
         self.add_nav_button("Bookings", self.build_bookings_content, icon="ticket")
@@ -60,7 +77,10 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
             tk.Label(card, text=event['title'], font=(t.FONT, 14, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(anchor="w", padx=15, pady=2)
             venue_display = event.get('venue_name') or 'Unknown Venue'
             recur_suffix = f" ({event['recur_day']})" if event['is_recurring'] == "Recurring" and event['recur_day'] not in (None, "", "None", "N/A") else ""
-            tk.Label(card, text=f"{venue_display}  | {event['event_datetime']} |  {event['is_recurring']}{recur_suffix}", font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=15, pady=2)
+            venue_row = tk.Frame(card, bg=t.CARD_BG)
+            venue_row.pack(anchor="w", padx=15, pady=2)
+            venue_label(venue_row, venue_display, event.get('maps_url'), font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT)
+            tk.Label(venue_row, text=f"  | {event['event_datetime']} |  {event['is_recurring']}{recur_suffix}", font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT)
             cap = get_event_capacity(event['id'])
             if cap['vehicles']:
                 vehicle_count = sum(v['count'] for v in cap['vehicles'])
@@ -81,32 +101,114 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
             delete_btn.pack(side=tk.LEFT, ipadx=10, ipady=4)
             t.add_hover(delete_btn, "#e74c3c", "#c0392b")
 
+    @staticmethod
+    def _booking_val(b, col_key):
+        if col_key == "event":
+            return b["event_title"]
+        if col_key == "date":
+            return b["booking_date"]
+        if col_key == "time":
+            return b["event_time"] or "TBA"
+        if col_key == "guests":
+            return b["guests"]
+        if col_key == "customer":
+            return b["customer_email"]
+        if col_key == "total":
+            return f"{float(b['total_price']):,.2f}"
+        if col_key == "status":
+            return b["status"]
+        return ""
+
     def build_bookings_content(self):
         for widget in self.scrollable_frame.winfo_children():
             widget.destroy()
+        style_tables()
 
         tk.Label(self.scrollable_frame, text="Bookings", font=(t.FONT, 22, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 5))
 
         bookings = get_bookings_by_vendor(self.email)
         live = [b for b in bookings if b["status"] != "Cancelled"]
-        summary = f"{len(live)} booking(s)  |  {sum(b['guests'] for b in live)} guests  |  {sum(b['total_price'] for b in live)} AED booked"
+        summary = f"{len(live)} booking(s)  |  {sum(b['guests'] for b in live)} guests  |  {sum(b['total_price'] for b in live):,.2f} AED booked"
         tk.Label(self.scrollable_frame, text=summary, font=(t.FONT, 11), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=(0, 10))
 
         if not bookings:
             tk.Label(self.scrollable_frame, text="No customer has booked one of your events yet.", font=(t.FONT, 11, "italic"), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=10)
             return
 
-        status_colors = {"Confirmed": "#27ae60", "Checked in": t.PRIMARY, "Expired": t.TEXT_MUTED, "Cancelled": "#e74c3c"}
-        for b in bookings:
-            card = tk.Frame(self.scrollable_frame, bg=t.CARD_BG, bd=1, relief="solid", highlightbackground=t.BORDER)
-            card.pack(fill=tk.X, padx=30, pady=8, ipady=8)
-            top_row = tk.Frame(card, bg=t.CARD_BG)
-            top_row.pack(fill=tk.X, padx=15, pady=(5, 0))
-            tk.Label(top_row, text=b["status"].upper(), font=(t.FONT, 9, "bold"), bg=t.CARD_BG, fg=status_colors.get(b["status"], t.TEXT_MUTED)).pack(side=tk.LEFT)
-            tk.Label(top_row, text=f"{b['total_price']} AED", font=(t.FONT, 11, "bold"), bg=t.CARD_BG, fg=t.ACCENT).pack(side=tk.RIGHT)
-            tk.Label(card, text=b["event_title"], font=(t.FONT, 13, "bold"), bg=t.CARD_BG, fg=t.TEXT, wraplength=650, justify="left").pack(anchor="w", padx=15, pady=2)
-            info = f"{b['booking_date']} at {b['event_time'] or 'TBA'}  |  {b['guests']} guest(s)  |  {b['customer_email']}"
-            tk.Label(card, text=info, font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=15, pady=2)
+        visible = [b for b in bookings
+                   if all(str(self._booking_val(b, ck)) not in vals for ck, vals in self.booking_hidden.items())]
+
+        tk.Label(self.scrollable_frame, text=f"Click a heading with {GEAR} to filter that column. Totals include 5% VAT.",
+                 font=(t.FONT, 9), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=(0, 4))
+
+        frame = tk.Frame(self.scrollable_frame, bg=t.CARD_BG, bd=1, relief="solid", highlightbackground=t.BORDER)
+        frame.pack(fill=tk.X, padx=30, pady=2)
+        col_keys = [c[0] for c in BOOKING_COLUMNS]
+        tree = ttk.Treeview(frame, columns=col_keys, show="headings", height=min(max(len(visible), 3), 15),
+                            style=TABLE_STYLE, selectmode="none")
+        stripe_tags(tree)
+        for status, color in STATUS_COLORS.items():
+            tree.tag_configure(f"status_{status}", foreground=color)
+
+        for col_key, heading, width, anchor, filterable in BOOKING_COLUMNS:
+            if filterable:
+                tree.heading(col_key, text=heading_text(heading, bool(self.booking_hidden.get(col_key))), anchor=anchor,
+                             command=lambda ck=col_key, h=heading: self._open_booking_filter(ck, h, bookings))
+            else:
+                tree.heading(col_key, text=heading, anchor=anchor)
+            tree.column(col_key, width=width, minwidth=width, anchor=anchor, stretch=col_key in ("event", "customer"))
+
+        for i, b in enumerate(visible):
+            tree.insert("", tk.END, values=[self._booking_val(b, ck) for ck in col_keys],
+                        tags=("odd" if i % 2 else "even", f"status_{b['status']}"))
+
+        scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=tree.yview)
+        tree.configure(yscrollcommand=scrollbar.set)
+        tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        if not visible:
+            tk.Label(self.scrollable_frame, text=f"All rows are hidden by your column filters. Click a {GEAR} heading to change them.",
+                     font=(t.FONT, 9, "italic"), bg=t.PAGE_BG, fg="#e74c3c").pack(anchor="w", padx=30)
+
+    def _open_booking_filter(self, col_key, col_name, bookings):
+        popup = tk.Toplevel(self.root)
+        popup.title(f"Filter: {col_name}")
+        popup.configure(bg=t.CARD_BG)
+        popup.resizable(False, False)
+        popup.transient(self.root)
+        popup.grab_set()
+
+        tk.Label(popup, text=f"{GEAR} Filter {col_name}", font=(t.FONT, 11, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(anchor="w", padx=15, pady=(15, 10))
+
+        counts = Counter(str(self._booking_val(b, col_key)) for b in bookings)
+        hidden = self.booking_hidden.get(col_key, set())
+        var_dict = {}
+        frame_chk = tk.Frame(popup, bg=t.CARD_BG)
+        frame_chk.pack(fill=tk.BOTH, expand=True, padx=15, pady=5)
+        for val in sorted(counts, key=str.lower):
+            var = tk.BooleanVar(value=(val not in hidden))
+            var_dict[val] = var
+            tk.Checkbutton(frame_chk, text=f"{val}  ({counts[val]})", variable=var, bg=t.CARD_BG, font=(t.FONT, 9),
+                           fg=t.TEXT, activebackground=t.CARD_BG, anchor="w").pack(fill=tk.X, pady=1)
+
+        def apply_filter():
+            self.booking_hidden[col_key] = {val for val, var in var_dict.items() if not var.get()}
+            popup.destroy()
+            self.build_bookings_content()
+
+        def clear_filter():
+            self.booking_hidden.pop(col_key, None)
+            popup.destroy()
+            self.build_bookings_content()
+
+        btns = tk.Frame(popup, bg=t.CARD_BG)
+        btns.pack(fill=tk.X, padx=15, pady=15)
+        tk.Button(btns, text="Apply Filter", font=(t.FONT, 9, "bold"), bg=t.PRIMARY, fg="white", relief="flat",
+                  cursor="hand2", command=apply_filter).pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=5)
+        tk.Button(btns, text="Clear", font=(t.FONT, 9), bg=t.CHIP_BG, fg=t.TEXT, relief="flat",
+                  cursor="hand2", command=clear_filter).pack(side=tk.LEFT, padx=(8, 0), ipady=5, ipadx=10)
+        popup.bind("<Escape>", lambda e: popup.destroy())
 
     def build_venues_content(self):
         for widget in self.scrollable_frame.winfo_children():
@@ -128,13 +230,27 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
         addr_entry.insert(0, "Address / Location")
         addr_entry.bind("<FocusIn>", lambda e: addr_entry.delete(0, tk.END) if addr_entry.get() == "Address / Location" else None)
 
+        maps_row = tk.Frame(self.scrollable_frame, bg=t.PAGE_BG)
+        maps_row.pack(fill=tk.X, padx=30, pady=(0, 5))
+        maps_entry = tk.Entry(maps_row, font=(t.FONT, 11), bg=t.CARD_BG, relief="solid", bd=1, width=62)
+        maps_entry.pack(side=tk.LEFT, ipady=5)
+        maps_entry.insert(0, "Google Maps link (optional)")
+        maps_entry.bind("<FocusIn>", lambda e: maps_entry.delete(0, tk.END) if maps_entry.get() == "Google Maps link (optional)" else None)
+        tk.Label(maps_row, text="In Google Maps: Share > Copy link", font=(t.FONT, 9, "italic"), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT, padx=10)
+
         def handle_add_venue():
             name = name_entry.get().strip()
             addr = addr_entry.get().strip()
             if not name or name == "Venue Name" or not addr or addr == "Address / Location":
                 messagebox.showerror("Error", "Please enter valid venue name and address.")
                 return
-            create_venue(name, addr, self.email)
+            maps_url = maps_entry.get().strip()
+            if maps_url == "Google Maps link (optional)":
+                maps_url = ""
+            result = create_venue(name, addr, self.email, maps_url)
+            if not result.get("success", True):
+                messagebox.showerror("Error", result.get("message", "The venue could not be saved."))
+                return
             messagebox.showinfo("Success", "Venue added successfully!")
             self.build_venues_content()
 
@@ -158,12 +274,67 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
 
             tk.Label(row, text=f"{v['name']}  -  {v['address']}", font=(t.FONT, 11, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(side=tk.LEFT, padx=10)
 
+            if v.get("maps_url"):
+                venue_label(row, "Open map", v["maps_url"], font=(t.FONT, 10), bg=t.CARD_BG, fg=t.TEXT).pack(side=tk.LEFT, padx=(0, 5))
+            else:
+                tk.Label(row, text="No map link", font=(t.FONT, 9, "italic"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT, padx=(0, 5))
+            edit_link_btn = tk.Button(row, text=f"{ic.emoji('edit')} Edit link", font=(t.FONT, 9, "bold"), bg=t.CHIP_BG, fg=t.TEXT, relief="flat",
+                                      cursor="hand2", command=lambda venue=v: self.open_maps_link_window(venue))
+            edit_link_btn.pack(side=tk.LEFT, padx=5, ipadx=8, ipady=2)
+            t.add_hover(edit_link_btn, t.CHIP_BG, t.CHIP_HOVER)
+
             def make_delete(vid):
                 return lambda: self.handle_delete_venue(vid)
 
             del_btn = tk.Button(row, text=f"{ic.emoji('trash')} Delete", font=(t.FONT, 9, "bold"), bg="#e74c3c", fg="white", relief="flat", command=make_delete(v["id"]))
             del_btn.pack(side=tk.RIGHT, padx=10, ipadx=8, ipady=3)
             t.add_hover(del_btn, "#e74c3c", "#c0392b")
+
+    def open_maps_link_window(self, venue):
+        width, height = 500, 260
+        win = tk.Toplevel(self.root)
+        win.title("Google Maps link")
+        win.configure(bg=t.CARD_BG)
+        win.resizable(False, False)
+        win.transient(self.root)
+
+        win.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (width // 2)
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (height // 2)
+        win.geometry(f"{width}x{height}+{x}+{y}")
+        try:
+            win.grab_set()
+        except tk.TclError:
+            pass
+
+        tk.Label(win, text=venue["name"], font=(t.FONT, 15, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(anchor="w", padx=25, pady=(20, 2))
+        tk.Label(win, text="Paste a link from Google Maps (Share > Copy link). Customers and staff can click the venue name to open it. Leave the box empty to remove the link.",
+                 font=(t.FONT, 10), bg=t.CARD_BG, fg=t.TEXT_MUTED, wraplength=450, justify="left").pack(anchor="w", padx=25, pady=(0, 12))
+
+        link_entry = tk.Entry(win, font=(t.FONT, 10), bg=t.FIELD_BG, relief="solid", bd=1)
+        link_entry.pack(fill=tk.X, padx=25, ipady=6)
+        link_entry.insert(0, venue.get("maps_url") or "")
+        link_entry.focus_set()
+
+        def save():
+            result = update_venue_maps_url(venue["id"], self.email, link_entry.get().strip())
+            if result.get("success"):
+                win.destroy()
+                messagebox.showinfo("Saved", result.get("message", "Map link saved."))
+                self.build_venues_content()
+            else:
+                messagebox.showerror("Cannot save", result.get("message", "Something went wrong."), parent=win)
+
+        btn_row = tk.Frame(win, bg=t.CARD_BG)
+        btn_row.pack(fill=tk.X, padx=25, pady=20)
+
+        cancel_btn = tk.Button(btn_row, text="Cancel", font=(t.FONT, 10, "bold"), bg=t.CHIP_BG, fg=t.TEXT, relief="flat", cursor="hand2", command=win.destroy)
+        cancel_btn.pack(side=tk.LEFT, ipadx=15, ipady=6)
+        t.add_hover(cancel_btn, t.CHIP_BG, t.CHIP_HOVER)
+
+        save_btn = tk.Button(btn_row, text="Save link", font=(t.FONT, 10, "bold"), bg=t.PRIMARY, fg="white", relief="flat", cursor="hand2", command=save)
+        save_btn.pack(side=tk.RIGHT, ipadx=15, ipady=6)
+        t.add_hover(save_btn, t.PRIMARY, t.PRIMARY_HOVER)
 
     def handle_delete_venue(self, venue_id):
         if messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this venue?"):

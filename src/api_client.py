@@ -59,8 +59,13 @@ def _delete(path):
 # -----------------------------------------------------------------------
 
 def check_login(email, password):
+    return login(email, password)[0]
+
+
+def login(email, password):
+    """(True, "") on success, otherwise (False, the reason to show, e.g. a banned account)."""
     r = _post("/auth/login", {"email": email, "password": password})
-    return r.get("success", False)
+    return r.get("success", False), r.get("message", "Invalid email or password.")
 
 
 def get_role(email):
@@ -72,13 +77,24 @@ def get_role(email):
 # Users
 # -----------------------------------------------------------------------
 
-def register_user(email, password, role="Customer", phone=None):
-    r = _post("/users/register", {"email": email, "password": password, "role": role, "phone": phone})
+def register_user(email, password, role="Customer", phone=None, ssn=None):
+    r = _post("/users/register", {"email": email, "password": password, "role": role, "phone": phone, "ssn": ssn})
     return r.get("success", False)
 
 
 def update_password(email, new_password):
     _put("/users/password", {"email": email, "new_password": new_password})
+
+
+def get_preferred_currency(email):
+    try:
+        return _get(f"/users/currency/{email}").get("currency", "AED")
+    except Exception:
+        return "AED"
+
+
+def set_preferred_currency(email, currency):
+    return _put("/users/currency", {"email": email, "currency": currency}).get("success", False)
 
 
 def email_exists(email):
@@ -100,6 +116,35 @@ def get_user_email(email):
 
 
 # -----------------------------------------------------------------------
+# Admin
+# -----------------------------------------------------------------------
+
+def get_all_users(admin_email):
+    r = _get("/admin/users", admin_email=admin_email)
+    return r.get("users", [])
+
+
+def set_user_banned(admin_email, email, banned=True):
+    """Returns {"success": bool, "message": str}."""
+    return _post("/admin/users/ban", {"admin_email": admin_email, "email": email, "banned": banned})
+
+
+def create_report(reporter_email, category, offender_type, subject, description, offender_email=""):
+    """Returns {"success": bool, "message": str}."""
+    return _post("/reports", {"reporter_email": reporter_email, "category": category, "offender_type": offender_type,
+                              "subject": subject, "description": description, "offender_email": offender_email})
+
+
+def get_reports(admin_email):
+    r = _get("/admin/reports", admin_email=admin_email)
+    return r.get("reports", [])
+
+
+def resolve_report(admin_email, report_id, resolution="Resolved"):
+    return _post(f"/admin/reports/{report_id}/resolve", {"admin_email": admin_email, "resolution": resolution})
+
+
+# -----------------------------------------------------------------------
 # Venues
 # -----------------------------------------------------------------------
 
@@ -113,8 +158,8 @@ def get_venues_by_vendor(vendor_email):
     return r.get("venues", [])
 
 
-def create_venue(name, address, vendor_email):
-    _post("/venues", {"name": name, "address": address, "vendor_email": vendor_email})
+def create_venue(name, address, vendor_email, maps_url=""):
+    return _post("/venues", {"name": name, "address": address, "vendor_email": vendor_email, "maps_url": maps_url})
 
 
 def delete_venue(venue_id):
@@ -265,8 +310,8 @@ def format_ticket_code(code):
 # Support Tickets
 # -----------------------------------------------------------------------
 
-def create_support_ticket(customer_email, subject, message):
-    r = _post("/support", {"customer_email": customer_email, "subject": subject, "message": message})
+def create_support_ticket(customer_email, subject, message, event_title=""):
+    r = _post("/support", {"customer_email": customer_email, "subject": subject, "message": message, "event_title": event_title})
     return r
 
 
@@ -393,3 +438,32 @@ def price_to_int(price_text):
     """Turns '240 AED' or 240 into the integer 240."""
     digits = "".join(c for c in str(price_text) if c in "0123456789")
     return int(digits) if digits else 0
+
+
+# -----------------------------------------------------------------------
+# Reviews (My Experiences)
+# -----------------------------------------------------------------------
+
+def get_my_experiences(customer_email):
+    """Past bookings of the customer, each with review_rating and review_comment."""
+    r = _get(f"/experiences/customer/{customer_email}")
+    return r.get("experiences", [])
+
+
+def submit_review(customer_email, booking_id, rating, comment=""):
+    r = _post("/reviews", {
+        "customer_email": customer_email, "booking_id": booking_id,
+        "rating": rating, "comment": comment,
+    })
+    return r
+
+
+def get_event_ratings():
+    """{'3': {'average': 4.5, 'count': 2}, ...} (keys are event ids as text). Events with no reviews are missing."""
+    r = _get("/events/ratings")
+    return r.get("ratings", {})
+
+
+def update_venue_maps_url(venue_id, vendor_email, maps_url):
+    """Adds, changes or removes (empty text) the Google Maps link of a venue. Returns the server answer."""
+    return _put(f"/venues/{venue_id}/maps_url", {"vendor_email": vendor_email, "maps_url": maps_url})

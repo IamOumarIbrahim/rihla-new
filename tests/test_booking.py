@@ -40,7 +40,9 @@ class BookingTests(unittest.TestCase):
     def test_booking_price_and_code(self):
         result = self.book(guests=3)
         self.assertTrue(result["success"])
-        self.assertEqual(result["booking"]["total_price"], 720)
+        self.assertEqual(result["booking"]["base_price"], 720)
+        self.assertEqual(result["booking"]["vat"], 36)
+        self.assertEqual(result["booking"]["total_price"], 756)
         self.assertEqual(len(result["booking"]["ticket_code"]), 16)
 
     def test_refusals(self):
@@ -108,16 +110,31 @@ class BookingTests(unittest.TestCase):
         self.assertEqual(row["checked_in"], 2)
 
     def test_support_tickets(self):
-        self.assertFalse(d.create_support_ticket("a@email.com", "x", "too short")["success"])
+        title = self.safari["title"]
+        self.assertFalse(d.create_support_ticket("a@email.com", "x", "too short", title)["success"])
         for i in range(d.MAX_OPEN_SUPPORT_TICKETS):
-            self.assertTrue(d.create_support_ticket("a@email.com", f"Subject {i}", "A message that is long enough")["success"])
-        self.assertFalse(d.create_support_ticket("a@email.com", "One more", "A message that is long enough")["success"])
+            self.assertTrue(d.create_support_ticket("a@email.com", f"Subject {i}", "A message that is long enough", title)["success"])
+        self.assertFalse(d.create_support_ticket("a@email.com", "One more", "A message that is long enough", title)["success"])
         open_tickets = d.get_open_support_tickets()
         self.assertEqual(len(open_tickets), d.MAX_OPEN_SUPPORT_TICKETS)
+        self.assertEqual(open_tickets[0]["event_title"], title)
         self.assertTrue(d.resolve_support_ticket(open_tickets[0]["id"], "staff@email.com"))
         self.assertFalse(d.resolve_support_ticket(open_tickets[0]["id"], "staff@email.com"))
         statuses = [t["status"] for t in d.get_support_tickets_by_customer("a@email.com")]
         self.assertEqual(statuses.count("Resolved"), 1)
+
+    def test_support_ticket_needs_an_event(self):
+        message = "A message that is long enough"
+        self.assertFalse(d.create_support_ticket("b@email.com", "Help", message)["success"])
+        self.assertFalse(d.create_support_ticket("b@email.com", "Help", message, "Made up event")["success"])
+        self.assertTrue(d.create_support_ticket("b@email.com", "Help", message, self.safari["title"])["success"])
+
+    def test_support_ticket_for_booked_event_that_is_no_longer_listed(self):
+        message = "A message that is long enough"
+        self.assertTrue(self.book()["success"])
+        d.delete_event(self.safari["id"])
+        self.assertFalse(d.create_support_ticket("b@email.com", "Help", message, self.safari["title"])["success"])
+        self.assertTrue(d.create_support_ticket("a@email.com", "Help", message, self.safari["title"])["success"])
 
 
 class CapacityTests(unittest.TestCase):
@@ -202,6 +219,16 @@ class CapacityTests(unittest.TestCase):
         info = d.get_event_capacity(self.dinner["id"])
         self.assertEqual((info["total"], info["source"]), (5, "event"))
 
+    def test_setting_available_releases_the_vehicle_from_its_event(self):
+        self.assign(self.dinner["id"], "RTA bus", 1)
+        bus = [v for v in d.get_all_vehicles("dispatcher@email.com") if v["vehicle_type"] == "RTA bus"][0]
+        self.assertEqual(len(d.get_dispatches_by_event(self.dinner["id"])), 1)
+        d.update_vehicle_status(bus["id"], "Available")
+        self.assertEqual(d.get_dispatches_by_event(self.dinner["id"]), [])
+        bus = [v for v in d.get_all_vehicles("dispatcher@email.com") if v["id"] == bus["id"]][0]
+        self.assertEqual(bus["status"], "Available")
+        self.assertEqual(d.get_event_capacity(self.dinner["id"])["source"], "event")
+
     def test_edit_event_capacity(self):
         e = self.dinner
         d.update_event(e["id"], e["title"], e["category"], e["price"], e["desc"], e["venue_id"], e["event_datetime"],
@@ -232,7 +259,7 @@ class CapacityTests(unittest.TestCase):
         conn.execute("INSERT INTO events (title, price, event_datetime, is_recurring) VALUES ('Old event', '10 AED', '2030-01-01 10:00', 'One-Time')")
         conn.commit()
         conn.close()
-        d.DB_PATH = old_path
+        database_core.DB_PATH = old_path
         d.init_db()
         d.init_db()
         old_event = [e for e in d.get_all_events() if e["title"] == "Old event"][0]

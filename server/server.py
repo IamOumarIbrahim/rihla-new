@@ -45,8 +45,11 @@ def login():
     body = request.get_json(silent=True) or {}
     email = body.get("email", "")
     password = body.get("password", "")
-    if core.check_login(email, password):
+    status = core.login_status(email, password)
+    if status == "ok":
         return _ok({"email": core.get_user_email(email) or email, "role": core.get_role(email)})
+    if status == "banned":
+        return _err("This account has been banned by an administrator.", 403)
     return _err("Invalid email or password.", 401)
 
 
@@ -62,8 +65,13 @@ def get_role(email):
 @app.route("/api/users/register", methods=["POST"])
 def register():
     body = request.get_json(silent=True) or {}
+    role = body.get("role", "Customer")
+    if role in core.SIGNUP_ROLES:
+        problem = core.ssn_error(role, body.get("ssn"))
+        if problem:
+            return _err(problem)
     ok = core.register_user(body.get("email", ""), body.get("password", ""),
-                            body.get("role", "Customer"), body.get("phone"))
+                            role, body.get("phone"), body.get("ssn"))
     if ok:
         return _ok({"message": "Registered."})
     return _err("Registration failed – email already exists or invalid data.")
@@ -74,6 +82,19 @@ def update_password():
     body = request.get_json(silent=True) or {}
     core.update_password(body.get("email", ""), body.get("new_password", ""))
     return _ok({"message": "Password updated."})
+
+
+@app.route("/api/users/currency/<path:email>")
+def get_currency(email):
+    return _ok({"currency": core.get_currency(email)})
+
+
+@app.route("/api/users/currency", methods=["PUT"])
+def set_currency():
+    body = request.get_json(silent=True) or {}
+    if core.set_currency(body.get("email", ""), body.get("currency", "")):
+        return _ok({"message": "Currency updated."})
+    return _err("Unknown user or unsupported currency.")
 
 
 @app.route("/api/users/email_exists/<path:email>")
@@ -95,6 +116,54 @@ def get_user_email(email):
 
 
 # -----------------------------------------------------------------------
+# Admin
+# -----------------------------------------------------------------------
+
+@app.route("/api/admin/users")
+def admin_get_users():
+    users = core.get_all_users(request.args.get("admin_email", ""))
+    if users is None:
+        return _err("Only an admin can do this.", 403)
+    return _ok({"users": users})
+
+
+@app.route("/api/admin/users/ban", methods=["POST"])
+def admin_ban_user():
+    body = request.get_json(silent=True) or {}
+    result = core.set_user_banned(body.get("admin_email", ""), body.get("email", ""), bool(body.get("banned", True)))
+    if result["success"]:
+        return _ok(result)
+    return _err(result["message"], 403)
+
+
+@app.route("/api/reports", methods=["POST"])
+def create_report():
+    body = request.get_json(silent=True) or {}
+    result = core.create_report(body.get("reporter_email", ""), body.get("category", ""), body.get("offender_type", ""),
+                                body.get("subject", ""), body.get("description", ""), body.get("offender_email", ""))
+    if result["success"]:
+        return _ok(result)
+    return _err(result["message"])
+
+
+@app.route("/api/admin/reports")
+def admin_get_reports():
+    reports = core.get_reports(request.args.get("admin_email", ""))
+    if reports is None:
+        return _err("Only an admin can do this.", 403)
+    return _ok({"reports": reports})
+
+
+@app.route("/api/admin/reports/<int:report_id>/resolve", methods=["POST"])
+def admin_resolve_report(report_id):
+    body = request.get_json(silent=True) or {}
+    result = core.resolve_report(body.get("admin_email", ""), report_id, body.get("resolution", "Resolved"))
+    if result["success"]:
+        return _ok(result)
+    return _err(result["message"])
+
+
+# -----------------------------------------------------------------------
 # Venues
 # -----------------------------------------------------------------------
 
@@ -111,8 +180,20 @@ def get_venues_by_vendor(vendor_email):
 @app.route("/api/venues", methods=["POST"])
 def create_venue():
     body = request.get_json(silent=True) or {}
-    events.create_venue(body.get("name", ""), body.get("address", ""), body.get("vendor_email", ""))
+    maps_url, problem = events.validate_maps_url(body.get("maps_url", ""))
+    if problem:
+        return _err(problem)
+    events.create_venue(body.get("name", ""), body.get("address", ""), body.get("vendor_email", ""), maps_url)
     return _ok({"message": "Venue created."})
+
+
+@app.route("/api/venues/<int:venue_id>/maps_url", methods=["PUT"])
+def update_venue_maps_url(venue_id):
+    body = request.get_json(silent=True) or {}
+    result = events.update_venue_maps_url(venue_id, body.get("vendor_email", ""), body.get("maps_url", ""))
+    if result["success"]:
+        return _ok(result)
+    return _err(result["message"])
 
 
 @app.route("/api/venues/<int:venue_id>", methods=["DELETE"])
@@ -293,7 +374,8 @@ def verify_ticket():
 def create_support_ticket():
     body = request.get_json(silent=True) or {}
     result = core.create_support_ticket(
-        body.get("customer_email", ""), body.get("subject", ""), body.get("message", "")
+        body.get("customer_email", ""), body.get("subject", ""), body.get("message", ""),
+        body.get("event_title", ""),
     )
     if result["success"]:
         return _ok(result)
@@ -501,6 +583,33 @@ def get_event_image(event_id):
     resp = app.response_class(data, mimetype="image/jpeg")
     resp.headers["Cache-Control"] = "no-cache"
     return resp
+
+
+# -----------------------------------------------------------------------
+# Reviews (My Experiences)
+# -----------------------------------------------------------------------
+
+@app.route("/api/experiences/customer/<path:email>")
+def get_my_experiences(email):
+    return _ok({"experiences": events.get_my_experiences(email)})
+
+
+@app.route("/api/events/ratings")
+def get_event_ratings():
+    ratings = events.get_event_ratings()
+    return _ok({"ratings": {str(event_id): info for event_id, info in ratings.items()}})
+
+
+@app.route("/api/reviews", methods=["POST"])
+def submit_review():
+    body = request.get_json(silent=True) or {}
+    result = events.submit_review(
+        body.get("customer_email", ""), body.get("booking_id"),
+        body.get("rating"), body.get("comment", "")
+    )
+    if result["success"]:
+        return _ok(result)
+    return _err(result["message"])
 
 
 # -----------------------------------------------------------------------

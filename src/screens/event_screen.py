@@ -10,9 +10,23 @@ from database import (
     get_event_capacity, MAX_GUESTS_PER_BOOKING, add_to_cart
 )
 from capacity_bar import CapacityBar
-from payment import show_demo_payment_modal
+from payment import show_demo_payment_modal, show_booking_details_window
 import icons as ic
 from event_images import CoverImage, load_image
+from map_link import venue_label
+
+
+# Text before a colon on this page ("Venue:", "Guests:") is drawn black, the value after it keeps its own colour.
+LABEL_FG = "#000000"
+
+
+def labeled_row(parent, label, value, font, bg, fg, **value_opts):
+    """Pack a black 'label:' and its value side by side; returns (row, value_label)."""
+    row = tk.Frame(parent, bg=bg)
+    tk.Label(row, text=f"{label}:", font=font, bg=bg, fg=LABEL_FG).pack(side=tk.LEFT)
+    value_lbl = tk.Label(row, text=value, font=font, bg=bg, fg=fg, **value_opts)
+    value_lbl.pack(side=tk.LEFT, padx=(4, 0))
+    return row, value_lbl
 
 
 def show_event_screen(root, email, tour, is_partner=False):
@@ -60,7 +74,7 @@ def show_event_screen(root, email, tour, is_partner=False):
         star_lbl.config(image=star_img, compound=tk.LEFT)
         star_lbl.image = star_img
     star_lbl.pack(side=tk.LEFT, padx=(0, 15))
-    tk.Label(meta_row, text=f"Category: {tour['category']}", font=(t.FONT, 11), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT)
+    labeled_row(meta_row, "Category", tour["category"], (t.FONT, 11), t.CARD_BG, t.TEXT_MUTED)[0].pack(side=tk.LEFT)
 
     tk.Label(left_frame, text="Overview", font=(t.FONT, 14, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(anchor="w", pady=(20, 5))
     tk.Label(left_frame, text=tour["desc"], font=(t.FONT, 11), bg=t.CARD_BG, fg=t.TEXT_MUTED,
@@ -75,11 +89,11 @@ def show_event_screen(root, email, tour, is_partner=False):
 
     # Detail rows with icons
     details_data = [
-        ("map_pin", f"Venue: {tour.get('venue_name') or 'To be announced'}"),
-        ("calendar", f"Date and time: {tour.get('event_datetime') or 'To be announced'}"),
-        ("repeat",   f"Type: {recurrence_text}"),
+        ("map_pin", "Venue", tour.get("venue_name") or "To be announced"),
+        ("calendar", "Date and time", tour.get("event_datetime") or "To be announced"),
+        ("repeat",   "Type", recurrence_text),
     ]
-    for icon_key, detail_text in details_data:
+    for icon_key, detail_label, detail_value in details_data:
         row = tk.Frame(left_frame, bg=t.CARD_BG)
         row.pack(anchor="w", pady=2)
         dimg = ic.get_icon(icon_key, size=13, color=t.TEXT_MUTED, master=left_frame)
@@ -87,22 +101,30 @@ def show_event_screen(root, email, tour, is_partner=False):
             lbl = tk.Label(row, image=dimg, bg=t.CARD_BG)
             lbl.image = dimg
             lbl.pack(side=tk.LEFT, padx=(0, 6))
-        tk.Label(row, text=f"{ic.emoji(icon_key)} {detail_text}", font=(t.FONT, 10), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT)
+        if icon_key == "map_pin":
+            tk.Label(row, text=f"{ic.emoji(icon_key)} Venue:", font=(t.FONT, 10), bg=t.CARD_BG, fg=LABEL_FG).pack(side=tk.LEFT)
+            venue_label(row, tour.get("venue_name") or "To be announced", tour.get("maps_url"), font=(t.FONT, 10), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT, padx=(4, 0))
+            if (tour.get("maps_url") or "").strip():
+                tk.Label(row, text="|", font=(t.FONT, 10), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT, padx=6)
+                venue_label(row, "Open in Google Maps", tour.get("maps_url"), font=(t.FONT, 10), bg=t.CARD_BG).pack(side=tk.LEFT)
+        else:
+            labeled_row(row, f"{ic.emoji(icon_key)} {detail_label}", detail_value, (t.FONT, 10), t.CARD_BG, t.TEXT_MUTED)[0].pack(side=tk.LEFT)
 
     tk.Label(left_frame, text="Capacity and Vehicles", font=(t.FONT, 14, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(anchor="w", pady=(20, 5))
 
     left_cap_bar = CapacityBar(left_frame, remaining=capacity["total"], total=capacity["total"], width=140, height=14, bg=t.CARD_BG)
     left_cap_bar.pack(anchor="w", pady=(2, 6))
 
-    capacity_lines = [f"Total Capacity: {capacity['total']} guests per date"]
+    # (label, value); a None label is a plain sentence with no colon
+    capacity_lines = [("Total Capacity", f"{capacity['total']} guests per date")]
     if capacity["vehicles"]:
         for vehicle in capacity["vehicles"]:
-            capacity_lines.append(f"Vehicles: {vehicle['count']} x {vehicle['vehicle_type']} ({vehicle['seats_each']} seats each)")
-        capacity_lines.append("The seats of these vehicles set the limit for this event.")
+            capacity_lines.append(("Vehicles", f"{vehicle['count']} x {vehicle['vehicle_type']} ({vehicle['seats_each']} seats each)"))
+        capacity_lines.append((None, "The seats of these vehicles set the limit for this event."))
     else:
-        capacity_lines.append("Vehicles: none assigned to this event")
+        capacity_lines.append(("Vehicles", "none assigned to this event"))
 
-    for item in capacity_lines:
+    for item_label, item in capacity_lines:
         row = tk.Frame(left_frame, bg=t.CARD_BG)
         row.pack(anchor="w", pady=2)
         truck_img = ic.get_icon("truck", size=13, color=t.TEXT_MUTED, master=left_frame)
@@ -110,7 +132,10 @@ def show_event_screen(root, email, tour, is_partner=False):
             lbl = tk.Label(row, image=truck_img, bg=t.CARD_BG)
             lbl.image = truck_img
             lbl.pack(side=tk.LEFT, padx=(0, 6))
-        tk.Label(row, text=f"{item}", font=(t.FONT, 10), bg=t.CARD_BG, fg=t.TEXT_MUTED, wraplength=600, justify="left").pack(side=tk.LEFT)
+        if item_label:
+            labeled_row(row, item_label, item, (t.FONT, 10), t.CARD_BG, t.TEXT_MUTED, wraplength=600, justify="left")[0].pack(side=tk.LEFT)
+        else:
+            tk.Label(row, text=item, font=(t.FONT, 10), bg=t.CARD_BG, fg=t.TEXT_MUTED, wraplength=600, justify="left").pack(side=tk.LEFT)
 
     # ----- Right Side: Booking Sidebar with Calendar Widget -----
     right_sidebar = tk.Frame(container, bg=t.FIELD_BG, padx=20, pady=30)
@@ -135,7 +160,7 @@ def show_event_screen(root, email, tour, is_partner=False):
     else:
         availability_text = "Event date:"
 
-    tk.Label(right_sidebar, text=availability_text, font=(t.FONT, 10, "bold"), bg=t.FIELD_BG, fg=t.TEXT_MUTED).pack(anchor="w", pady=(0, 5))
+    tk.Label(right_sidebar, text=availability_text, font=(t.FONT, 10, "bold"), bg=t.FIELD_BG, fg=LABEL_FG).pack(anchor="w", pady=(0, 5))
 
     # Calendar Widget State
     today = date.today()
@@ -168,8 +193,8 @@ def show_event_screen(root, email, tour, is_partner=False):
     days_grid = tk.Frame(cal_frame, bg=t.CARD_BG)
     days_grid.pack(fill=tk.BOTH, padx=5, pady=5)
 
-    selected_label = tk.Label(right_sidebar, text="Selected: None", font=(t.FONT, 9, "bold"), bg=t.FIELD_BG, fg="#e74c3c")
-    selected_label.pack(anchor="w", pady=(10, 5))
+    selected_row, selected_label = labeled_row(right_sidebar, "Selected", "None", (t.FONT, 9, "bold"), t.FIELD_BG, "#e74c3c")
+    selected_row.pack(anchor="w", pady=(10, 5))
 
     # Capacity Bar Widget
     capacity_bar = CapacityBar(right_sidebar, remaining=capacity["total"], total=capacity["total"], width=130, height=14, bg=t.FIELD_BG)
@@ -179,7 +204,7 @@ def show_event_screen(root, email, tour, is_partner=False):
     unit_price = price_to_int(tour["price"])
     guests_row = tk.Frame(right_sidebar, bg=t.FIELD_BG)
     guests_row.pack(fill=tk.X, pady=(5, 0))
-    tk.Label(guests_row, text="Guests:", font=(t.FONT, 10, "bold"), bg=t.FIELD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT)
+    tk.Label(guests_row, text="Guests:", font=(t.FONT, 10, "bold"), bg=t.FIELD_BG, fg=LABEL_FG).pack(side=tk.LEFT)
     guests_var = tk.IntVar(value=1)
 
     initial_limit = capacity["total"] if is_partner else min(MAX_GUESTS_PER_BOOKING, capacity["total"])
@@ -199,14 +224,14 @@ def show_event_screen(root, email, tour, is_partner=False):
         client_box = tk.Frame(right_sidebar, bg=t.FIELD_BG)
         client_box.pack(fill=tk.X, pady=(4, 0))
         tk.Label(client_box, text="Customer / Group Name (Optional):", font=(t.FONT, 9, "bold"),
-                 bg=t.FIELD_BG, fg=t.TEXT_MUTED).pack(anchor="w")
+                 bg=t.FIELD_BG, fg=LABEL_FG).pack(anchor="w")
         client_entry = tk.Entry(client_box, font=(t.FONT, 10), bg=t.CARD_BG, relief="solid", bd=1)
         client_entry.pack(fill=tk.X, ipady=3, pady=(2, 4))
     else:
         client_entry = None
 
-    total_label = tk.Label(right_sidebar, text="", font=(t.FONT, 12, "bold"), bg=t.FIELD_BG, fg=t.TEXT)
-    total_label.pack(anchor="w", pady=(8, 0))
+    total_row, total_label = labeled_row(right_sidebar, "Total", "", (t.FONT, 12, "bold"), t.FIELD_BG, t.TEXT)
+    total_row.pack(anchor="w", pady=(8, 0))
 
     def current_guests():
         try:
@@ -215,7 +240,7 @@ def show_event_screen(root, email, tour, is_partner=False):
             return 1
 
     def update_total(*args):
-        total_label.config(text=f"Total: {unit_price * current_guests()} AED")
+        total_label.config(text=f"{unit_price * current_guests()} AED")
 
     guests_var.trace_add("write", update_total)
     update_total()
@@ -250,7 +275,7 @@ def show_event_screen(root, email, tour, is_partner=False):
             if fully_booked:
                 book_btn.config(state=tk.DISABLED, text="Fully booked")
             else:
-                book_btn.config(state=tk.NORMAL, text=f"{ic.emoji('ticket')} Proceed to Booking")
+                book_btn.config(state=tk.NORMAL, text=f"Proceed to Booking")
 
         return info
 
@@ -292,7 +317,7 @@ def show_event_screen(root, email, tour, is_partner=False):
 
     def select_date(d_obj):
         cal_state["selected"] = d_obj
-        selected_label.config(text=f"Selected: {d_obj.strftime('%b %d, %Y')}", fg="#27ae60")
+        selected_label.config(text=d_obj.strftime('%b %d, %Y'), fg="#27ae60")
         refresh_capacity()
         draw_calendar()
 
@@ -361,21 +386,26 @@ def show_event_screen(root, email, tour, is_partner=False):
             c_name = client_entry.get().strip() if client_entry else ""
             tot = unit_price * guests
 
-            def on_pay_success():
+            def on_pay_success(payment):
                 res = create_booking(email, tour["id"], chosen_date.isoformat(), guests, is_partner=True, client_name=c_name)
-                if not res["success"]:
-                    messagebox.showerror("Booking failed", res["message"])
-                    refresh_capacity()
-                    return
-                booking = res["booking"]
-                messagebox.showinfo(
-                    "OTA Booking Confirmed",
-                    f"Booking Confirmed!\n\nTicket Code: {format_ticket_code(booking['ticket_code'])}\n"
-                    f"Event: {tour['title']}\nDate: {chosen_date.strftime('%b %d, %Y')}\nGuests: {guests}\n"
-                    f"Group: {c_name or 'N/A'}\nTotal: {tot} AED"
-                )
-                from welcome.partner_welcome import show_partner_welcome
-                show_partner_welcome(root, email, tab="bookings")
+                booking = res.get("booking") or {}
+                details = {
+                    "title": tour["title"], "base": tot,
+                    "venue": booking.get("venue_name") or tour.get("venue_name"),
+                    "date": chosen_date.strftime('%b %d, %Y'), "time": booking.get("event_time"),
+                    "guests": guests, "client_name": c_name,
+                    "ticket_code": format_ticket_code(booking["ticket_code"]) if booking else None,
+                }
+
+                def after_close():
+                    if res["success"]:
+                        from welcome.partner_welcome import show_partner_welcome
+                        show_partner_welcome(root, email, tab="bookings")
+                    else:
+                        refresh_capacity()
+
+                show_booking_details_window(root, [details], payment, email,
+                                            error=None if res["success"] else res["message"], on_close=after_close)
 
             items = [{
                 "title": tour["title"],
@@ -384,9 +414,9 @@ def show_event_screen(root, email, tour, is_partner=False):
                 "total": tot,
                 "client_name": c_name
             }]
-            show_demo_payment_modal(root, "OTA Booking - Single Event", items, tot, on_pay_success)
+            show_demo_payment_modal(root, "OTA Booking - Single Event", items, tot, on_pay_success, email=email)
 
-        add_list_btn = tk.Button(right_sidebar, text=f"{ic.emoji('cart')} Add to Shopping List", font=(t.FONT, 11, "bold"), bd=0, relief="flat",
+        add_list_btn = tk.Button(right_sidebar, text=f"Add to List", font=(t.FONT, 11, "bold"), bd=0, relief="flat",
                                  bg=t.ACCENT, fg="white", activebackground=t.PRIMARY_HOVER, cursor="hand2", command=handle_add_to_cart)
         plus_img = ic.get_icon("plus", size=16, color="#ffffff", master=right_sidebar)
         if plus_img:
@@ -395,7 +425,7 @@ def show_event_screen(root, email, tour, is_partner=False):
         add_list_btn.pack(fill=tk.X, pady=(15, 6), ipady=8)
         t.add_hover(add_list_btn, t.ACCENT, "#e67e22")
 
-        pay_now_btn = tk.Button(right_sidebar, text=f"{ic.emoji('payment')} Pay Now (Single Event)", font=(t.FONT, 10, "bold"), bd=0, relief="flat",
+        pay_now_btn = tk.Button(right_sidebar, text=f"Pay Now", font=(t.FONT, 10, "bold"), bd=0, relief="flat",
                                 bg=t.PRIMARY, fg="white", activebackground=t.PRIMARY_HOVER, cursor="hand2", command=handle_partner_pay_now)
         pay_img = ic.get_icon("payment", size=15, color="#ffffff", master=right_sidebar)
         if pay_img:
@@ -404,7 +434,7 @@ def show_event_screen(root, email, tour, is_partner=False):
         pay_now_btn.pack(fill=tk.X, pady=(0, 6), ipady=7)
         t.add_hover(pay_now_btn, t.PRIMARY, t.PRIMARY_HOVER)
 
-        view_cart_btn = tk.Button(right_sidebar, text=f"{ic.emoji('cart')} View Shopping List", font=(t.FONT, 9), bd=0, relief="flat",
+        view_cart_btn = tk.Button(right_sidebar, text=f"View List", font=(t.FONT, 9), bd=0, relief="flat",
                                   bg=t.CHIP_BG, fg=t.TEXT, cursor="hand2",
                                   command=lambda: (show_partner_welcome(root, email, tab="cart")
                                                    if True else None))
@@ -437,21 +467,26 @@ def show_event_screen(root, email, tour, is_partner=False):
 
             tot = unit_price * guests
 
-            def on_pay_success():
+            def on_pay_success(payment):
                 result = create_booking(email, tour["id"], chosen_date.isoformat(), guests, is_partner=False)
-                if not result["success"]:
-                    messagebox.showerror("Booking failed", result["message"])
-                    refresh_capacity()
-                    return
+                booking = result.get("booking") or {}
+                details = {
+                    "title": tour["title"], "base": tot,
+                    "venue": booking.get("venue_name") or tour.get("venue_name"),
+                    "date": chosen_date.strftime('%b %d, %Y'), "time": booking.get("event_time"),
+                    "guests": guests,
+                    "ticket_code": format_ticket_code(booking["ticket_code"]) if booking else None,
+                }
 
-                booking = result["booking"]
-                messagebox.showinfo(
-                    "Booking confirmed",
-                    f"Your booking is confirmed.\n\nTicket code: {format_ticket_code(booking['ticket_code'])}\n"
-                    f"Show this code at the entrance. Find it again in My Bookings.",
-                )
-                from welcome.customer_welcome import show_customer_welcome
-                show_customer_welcome(root, email, "bookings")
+                def after_close():
+                    if result["success"]:
+                        from welcome.customer_welcome import show_customer_welcome
+                        show_customer_welcome(root, email, "bookings")
+                    else:
+                        refresh_capacity()
+
+                show_booking_details_window(root, [details], payment, email,
+                                            error=None if result["success"] else result["message"], on_close=after_close)
 
             items = [{
                 "title": tour["title"],
@@ -459,7 +494,7 @@ def show_event_screen(root, email, tour, is_partner=False):
                 "guests": guests,
                 "total": tot
             }]
-            show_demo_payment_modal(root, "Customer Tour Booking", items, tot, on_pay_success)
+            show_demo_payment_modal(root, "Customer Tour Booking", items, tot, on_pay_success, email=email)
 
         book_btn = tk.Button(right_sidebar, text=f"{ic.emoji('ticket')} Proceed to Booking", font=(t.FONT, 11, "bold"), bd=0, relief="flat",
                              bg=t.ACCENT, fg="white", activebackground=t.PRIMARY_HOVER, cursor="hand2", command=handle_booking)

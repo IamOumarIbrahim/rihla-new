@@ -5,6 +5,7 @@ from welcome.vendor_welcome import show_vendor_welcome
 from welcome.staff_welcome import show_staff_welcome
 from welcome.partner_welcome import show_partner_welcome
 from welcome.dispatcher_welcome import show_dispatcher_welcome
+from welcome.admin_welcome import show_admin_welcome
 
 # To add a role: create welcome/<role>_welcome.py and add one line here.
 WELCOME_SCREENS = {
@@ -13,6 +14,7 @@ WELCOME_SCREENS = {
     "Staff": show_staff_welcome,
     "Partner": show_partner_welcome,
     "Dispatcher": show_dispatcher_welcome,
+    "Admin": show_admin_welcome,
 }
 
 

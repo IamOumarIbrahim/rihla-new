@@ -1,16 +1,21 @@
 from datetime import date, timedelta
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, ttk
 from .users_welcome import BaseWelcomeScreen
 from screens.event_screen import show_event_screen
 from database import (
     get_all_events, get_bookings_by_customer, cancel_booking, format_ticket_code,
-    create_support_ticket, get_support_tickets_by_customer, get_event_capacity
+    create_support_ticket, get_support_tickets_by_customer, get_event_capacity,
+    get_my_experiences, submit_review, get_event_ratings
 )
 from capacity_bar import CapacityBar
 import theme as t
 import icons as ic
 import event_images
+from map_link import venue_label
+
+
+MAX_REVIEW_COMMENT = 500
 
 
 def _parse_price(value):
@@ -43,6 +48,7 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
         self.root = root
 
         self.add_nav_button("My Bookings", self.build_bookings_content, icon="ticket")
+        self.add_nav_button("My Experiences", self.build_experiences_content, icon="star")
         self.add_nav_button("Explore Tours", lambda: self.apply_all_filters(), icon="compass")
         self.add_nav_button("Support", self.build_support_content, icon="chat")
 
@@ -62,8 +68,9 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
                 "recur_time": e["recur_time"],
                 "venue_id": e["venue_id"],
                 "venue_name": e.get("venue_name") or "Unknown Venue",
+                "maps_url": e.get("maps_url") or "",
                 "level": e["is_recurring"],
-                "rating": "5.0",
+                "rating": "0.0",
                 "desc": e["desc"]
             })
 
@@ -80,7 +87,15 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
 
         self.build_customer_content(self.all_tours)
 
+    def _refresh_ratings(self):
+        """Reads the average rating of every event from the reviews database (0.0 when an event has no reviews)."""
+        ratings = get_event_ratings()
+        for tour in self.all_tours:
+            info = ratings.get(str(tour["id"]))
+            tour["rating"] = f"{info['average']:.1f}" if info else "0.0"
+
     def build_customer_content(self, tours_to_show):
+        self._refresh_ratings()
         for widget in self.scrollable_frame.winfo_children():
             widget.destroy()
 
@@ -140,7 +155,7 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
             top_row.pack(fill=tk.X, padx=15, pady=10)
 
             # Star icon for rating
-            star_lbl = tk.Label(top_row, text=f"{ic.emoji('star')} {tour['rating']}", font=(t.FONT, 10, "bold"), bg=t.CARD_BG, fg=t.ACCENT)
+            star_lbl = tk.Label(top_row, text=f"{ic.emoji('star')} {float(tour['rating']):.1f}/5.0", font=(t.FONT, 10, "bold"), bg=t.CARD_BG, fg=t.ACCENT)
             star_img = ic.get_icon("star", size=14, color=t.ACCENT, master=card)
             if star_img:
                 star_lbl.config(image=star_img, compound=tk.LEFT)
@@ -161,7 +176,7 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
                 lbl = tk.Label(sched_frame, image=pin_img, bg=t.CARD_BG)
                 lbl.image = pin_img
                 lbl.pack(side=tk.LEFT)
-            tk.Label(sched_frame, text=f"{tour['venue_name']}", font=(t.FONT, 8), bg=t.CARD_BG, fg="#000000").pack(side=tk.LEFT)
+            venue_label(sched_frame, f"{tour['venue_name']}", tour.get("maps_url"), font=(t.FONT, 8), bg=t.CARD_BG, fg="#000000").pack(side=tk.LEFT)
 
             recur_img = ic.get_icon("repeat", size=12, color=t.TEXT_MUTED, master=card)
             if recur_img:
@@ -254,6 +269,125 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
                 cancel_btn.pack(side=tk.LEFT, ipadx=10, ipady=4)
                 t.add_hover(cancel_btn, "#e74c3c", "#c0392b")
 
+    def build_experiences_content(self):
+        for widget in self.scrollable_frame.winfo_children():
+            widget.destroy()
+
+        tk.Label(self.scrollable_frame, text="My Experiences", font=(t.FONT, 22, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 5))
+        tk.Label(self.scrollable_frame, text="Tell us how it went. Your review helps other travellers to choose.", font=(t.FONT, 11), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=(0, 10))
+
+        experiences = get_my_experiences(self.email)
+        if not experiences:
+            tk.Label(self.scrollable_frame, text="No past experiences yet. After you attend an event, it will appear here.", font=(t.FONT, 11, "italic"), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=10)
+            return
+
+        table = tk.Frame(self.scrollable_frame, bg=t.CARD_BG, bd=1, relief="solid", highlightbackground=t.BORDER)
+        table.pack(fill=tk.X, padx=30, pady=10)
+
+        # Column widths follow these weights: name | date | time | location | review
+        for col, weight in enumerate((4, 3, 2, 3, 3)):
+            table.columnconfigure(col, weight=weight, uniform="experience_cols")
+
+        for col, heading in enumerate(("Experience name", "Date", "Time", "Location", "Review")):
+            tk.Label(table, text=heading, font=(t.FONT, 10, "bold"), bg=t.CHIP_BG, fg=t.TEXT_MUTED,
+                     anchor="w", padx=12, pady=8).grid(row=0, column=col, sticky="nsew")
+
+        for i, exp in enumerate(experiences):
+            grid_row = 1 + i * 2
+
+            try:
+                when = date.fromisoformat(exp["booking_date"]).strftime("%d %b %Y")
+            except ValueError:
+                when = exp["booking_date"]
+
+            cells = (exp["event_title"], when, exp["event_time"] or "TBA", exp["venue_name"] or "TBA")
+            for col, text in enumerate(cells):
+                tk.Label(table, text=text, font=(t.FONT, 10, "bold" if col == 0 else "normal"), bg=t.CARD_BG, fg=t.TEXT,
+                         anchor="w", justify="left", wraplength=220, padx=12, pady=10).grid(row=grid_row, column=col, sticky="nsew")
+
+            rating = exp.get("review_rating")
+            if rating is None:
+                review_btn = tk.Button(table, text="Leave review", bg=t.PRIMARY, fg="white", font=(t.FONT, 9, "bold"), relief="flat",
+                                       cursor="hand2", command=lambda e=exp: self.open_review_window(e))
+                t.add_hover(review_btn, t.PRIMARY, t.PRIMARY_HOVER)
+            else:
+                review_btn = tk.Button(table, text=f"{ic.emoji('star')} {float(rating):.1f}  Edit", bg=t.CHIP_BG, fg=t.TEXT, font=(t.FONT, 9, "bold"),
+                                       relief="flat", cursor="hand2", command=lambda e=exp: self.open_review_window(e))
+                t.add_hover(review_btn, t.CHIP_BG, t.CHIP_HOVER)
+            review_btn.grid(row=grid_row, column=4, sticky="w", padx=12, pady=8, ipadx=8, ipady=3)
+
+            # Thin line between rows
+            tk.Frame(table, bg=t.BORDER, height=1).grid(row=grid_row + 1, column=0, columnspan=5, sticky="ew")
+
+    def open_review_window(self, exp):
+        width, height = 420, 440
+        win = tk.Toplevel(self.root)
+        win.title("Review your experience")
+        win.configure(bg=t.CARD_BG)
+        win.resizable(False, False)
+        win.transient(self.root)
+
+        win.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (width // 2)
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (height // 2)
+        win.geometry(f"{width}x{height}+{x}+{y}")
+        try:
+            win.grab_set()
+        except tk.TclError:
+            pass
+
+        tk.Label(win, text="How was your experience?", font=(t.FONT, 15, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(anchor="w", padx=25, pady=(20, 2))
+        tk.Label(win, text=exp["event_title"], font=(t.FONT, 10), bg=t.CARD_BG, fg=t.TEXT_MUTED, wraplength=370, justify="left").pack(anchor="w", padx=25)
+
+        tk.Label(win, text="Your rating", font=(t.FONT, 10, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=25, pady=(18, 0))
+        start_rating = float(exp["review_rating"]) if exp.get("review_rating") is not None else 0.0
+        rating_var = tk.DoubleVar(value=start_rating)
+        rating_label = tk.Label(win, text=f"{start_rating:.1f} / 5.0", font=(t.FONT, 16, "bold"), bg=t.CARD_BG, fg=t.ACCENT)
+        rating_label.pack(anchor="w", padx=25)
+
+        tk.Scale(win, from_=0, to=5, resolution=0.5, orient=tk.HORIZONTAL, length=370, tickinterval=1, showvalue=False,
+                 variable=rating_var, bg=t.CARD_BG, fg=t.TEXT, troughcolor=t.BORDER, highlightthickness=0, font=(t.FONT, 9),
+                 command=lambda v: rating_label.config(text=f"{float(v):.1f} / 5.0")).pack(padx=25, pady=(0, 5))
+
+        tk.Label(win, text="Your comment (optional)", font=(t.FONT, 10, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=25, pady=(10, 2))
+        comment_box = tk.Text(win, height=6, width=44, font=(t.FONT, 10), wrap="word", relief="solid", bd=1)
+        comment_box.pack(padx=25)
+        comment_box.insert("1.0", exp.get("review_comment") or "")
+
+        counter = tk.Label(win, text="", font=(t.FONT, 8), bg=t.CARD_BG, fg=t.TEXT_MUTED)
+        counter.pack(anchor="e", padx=25)
+
+        def update_counter(event=None):
+            text = comment_box.get("1.0", "end-1c")
+            if len(text) > MAX_REVIEW_COMMENT:
+                comment_box.delete("1.0", "end")
+                comment_box.insert("1.0", text[:MAX_REVIEW_COMMENT])
+                text = text[:MAX_REVIEW_COMMENT]
+            counter.config(text=f"{len(text)} / {MAX_REVIEW_COMMENT}")
+
+        comment_box.bind("<KeyRelease>", update_counter)
+        update_counter()
+
+        def submit():
+            result = submit_review(self.email, exp["id"], float(rating_var.get()), comment_box.get("1.0", "end").strip())
+            if result.get("success"):
+                win.destroy()
+                messagebox.showinfo("Thank you", result.get("message", "Your review was saved."))
+                self.build_experiences_content()
+            else:
+                messagebox.showerror("Cannot save review", result.get("message", "Something went wrong."), parent=win)
+
+        btn_row = tk.Frame(win, bg=t.CARD_BG)
+        btn_row.pack(fill=tk.X, padx=25, pady=15)
+
+        cancel_btn = tk.Button(btn_row, text="Cancel", font=(t.FONT, 10, "bold"), bg=t.CHIP_BG, fg=t.TEXT, relief="flat", cursor="hand2", command=win.destroy)
+        cancel_btn.pack(side=tk.LEFT, ipadx=15, ipady=6)
+        t.add_hover(cancel_btn, t.CHIP_BG, t.CHIP_HOVER)
+
+        submit_btn = tk.Button(btn_row, text="Submit review", font=(t.FONT, 10, "bold"), bg=t.PRIMARY, fg="white", relief="flat", cursor="hand2", command=submit)
+        submit_btn.pack(side=tk.RIGHT, ipadx=15, ipady=6)
+        t.add_hover(submit_btn, t.PRIMARY, t.PRIMARY_HOVER)
+
     def build_support_content(self):
         for widget in self.scrollable_frame.winfo_children():
             widget.destroy()
@@ -263,6 +397,20 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
 
         form = tk.Frame(self.scrollable_frame, bg=t.CARD_BG, bd=1, relief="solid", highlightbackground=t.BORDER)
         form.pack(fill=tk.X, padx=30, pady=10, ipady=10)
+
+        # A ticket must be about an event: one listed now, or one the customer booked before.
+        event_titles = []
+        for title in [b["event_title"] for b in get_bookings_by_customer(self.email)] + [e["title"] for e in get_all_events()]:
+            if title and title not in event_titles:
+                event_titles.append(title)
+
+        tk.Label(form, text="Event", font=(t.FONT, 10, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=15, pady=(10, 2))
+        event_var = tk.StringVar()
+        event_box = ttk.Combobox(form, textvariable=event_var, values=event_titles, state="readonly", font=(t.FONT, 10))
+        event_box.pack(fill=tk.X, padx=15)
+        event_hint = tk.Label(form, text="Choose the event your message is about.", font=(t.FONT, 9), bg=t.CARD_BG, fg=t.ACCENT)
+        event_hint.pack(anchor="w", padx=15, pady=(2, 0))
+
         tk.Label(form, text="Subject", font=(t.FONT, 10, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=15, pady=(10, 2))
         subject_entry = tk.Entry(form, font=(t.FONT, 10))
         subject_entry.pack(fill=tk.X, padx=15)
@@ -271,16 +419,27 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
         message_box.pack(fill=tk.X, padx=15)
 
         def send():
-            result = create_support_ticket(self.email, subject_entry.get(), message_box.get("1.0", "end"))
+            if not event_var.get():
+                messagebox.showerror("Cannot send", "Please choose the event your message is about.")
+                return
+            result = create_support_ticket(self.email, subject_entry.get(), message_box.get("1.0", "end"), event_var.get())
             if result["success"]:
                 messagebox.showinfo("Sent", result["message"])
                 self.build_support_content()
             else:
                 messagebox.showerror("Cannot send", result["message"])
 
-        send_btn = tk.Button(form, text=f"Send message", font=(t.FONT, 10, "bold"), bg=t.PRIMARY, fg="white", relief="flat", command=send)
+        send_btn = tk.Button(form, text=f"Send message", font=(t.FONT, 10, "bold"), bg=t.PRIMARY, fg="white", relief="flat", command=send, state="disabled")
         send_btn.pack(anchor="w", padx=15, pady=(10, 5), ipadx=15, ipady=6)
         t.add_hover(send_btn, t.PRIMARY, t.PRIMARY_HOVER)
+
+        def on_event_chosen(_event=None):
+            if event_var.get():
+                send_btn.config(state="normal")
+                event_hint.config(text="")
+        event_box.bind("<<ComboboxSelected>>", on_event_chosen)
+        if not event_titles:
+            event_hint.config(text="There are no events to choose from yet, so a message cannot be sent.")
 
         tickets = get_support_tickets_by_customer(self.email)
         if tickets:
@@ -290,6 +449,8 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
             card.pack(fill=tk.X, padx=30, pady=6, ipady=6)
             color = "#27ae60" if ticket["status"] == "Resolved" else t.ACCENT
             tk.Label(card, text=f"{ticket['status'].upper()}  |  {ticket['created_at']}", font=(t.FONT, 9, "bold"), bg=t.CARD_BG, fg=color).pack(anchor="w", padx=15, pady=(6, 0))
+            if ticket.get("event_title"):
+                tk.Label(card, text=f"Event: {ticket['event_title']}", font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=15)
             tk.Label(card, text=ticket["subject"], font=(t.FONT, 12, "bold"), bg=t.CARD_BG, fg=t.TEXT, wraplength=650, justify="left").pack(anchor="w", padx=15, pady=2)
             tk.Label(card, text=ticket["message"], font=(t.FONT, 10), bg=t.CARD_BG, fg=t.TEXT_MUTED, wraplength=650, justify="left").pack(anchor="w", padx=15, pady=2)
 

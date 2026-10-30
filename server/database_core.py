@@ -1,12 +1,12 @@
 import hashlib
 import hmac
-from datetime import date
+from datetime import date, datetime
 import os
 import secrets
 import sqlite3
 from contextlib import contextmanager
 
-from config import ROLES, DEMO_ACCOUNTS
+from config import DEMO_ACCOUNTS, ADMIN_ROLE, SIGNUP_ROLES
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "users.db")
 # Server-side: DB always lives next to this file (server/users.db)
@@ -16,6 +16,44 @@ DEFAULT_EVENT_CAPACITY = 20
 MAX_EVENT_CAPACITY = 5000
 MAX_GUESTS_PER_BOOKING = 10
 MAX_OPEN_SUPPORT_TICKETS = 3
+
+CURRENCIES = ("AED", "USD", "EUR", "GBP")
+DEFAULT_CURRENCY = "AED"
+
+
+SSN_LENGTH = 16
+# Made-up SSNs for the non-customer demo accounts, so they follow the same rule as real sign-ups.
+DEMO_SSNS = {
+    "Vendor": "4000100020003001",
+    "Staff": "4000100020003002",
+    "Partner": "4000100020003003",
+    "Dispatcher": "4000100020003004",
+    "Admin": "4000100020003005",
+}
+
+
+def clean_ssn(ssn):
+    """Drops spaces and dashes: '1234 5678-...' -> '12345678...'."""
+    return "".join(c for c in str(ssn or "") if c not in " -")
+
+
+def ssn_error(role, ssn):
+    """None when the SSN is fine for this role, otherwise the message to show. Customers need no SSN."""
+    if role == "Customer":
+        return None
+    ssn = clean_ssn(ssn)
+    if not ssn:
+        return f"A {SSN_LENGTH}-digit SSN is required for {role} accounts."
+    if len(ssn) != SSN_LENGTH or not (ssn.isascii() and ssn.isdigit()):
+        return f"The SSN must be exactly {SSN_LENGTH} digits (0-9)."
+    if len(set(ssn)) == 1:
+        return "Please enter your real SSN."
+    return None
+
+
+def _now():
+    """Server's local time, in the same text form SQLite timestamps use."""
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 @contextmanager
@@ -61,7 +99,11 @@ def init_db():
                 email TEXT UNIQUE,
                 password TEXT,
                 role TEXT NOT NULL DEFAULT 'Customer',
-                phone TEXT
+                phone TEXT,
+                created_at TEXT,
+                banned INTEGER NOT NULL DEFAULT 0,
+                banned_at TEXT,
+                banned_by TEXT
             )
         ''')
 
@@ -135,12 +177,31 @@ def init_db():
             CREATE TABLE IF NOT EXISTS support_tickets (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 customer_email TEXT NOT NULL,
+                event_title TEXT NOT NULL DEFAULT '',
                 subject TEXT NOT NULL,
                 message TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'Open',
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 resolved_by TEXT,
                 resolved_at TEXT
+            )
+        ''')
+
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                reporter_email TEXT NOT NULL,
+                reporter_role TEXT NOT NULL DEFAULT '',
+                category TEXT NOT NULL,
+                offender_type TEXT NOT NULL,
+                offender_email TEXT NOT NULL DEFAULT '',
+                subject TEXT NOT NULL,
+                description TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'Open',
+                created_at TEXT,
+                resolved_by TEXT,
+                resolved_at TEXT,
+                resolution TEXT NOT NULL DEFAULT ''
             )
         ''')
 
@@ -180,7 +241,33 @@ def init_db():
         if "capacity" not in event_columns:
             conn.execute(f"ALTER TABLE events ADD COLUMN capacity INTEGER NOT NULL DEFAULT {DEFAULT_EVENT_CAPACITY}")
 
+        # Venues made before map links existed get the new column (old venues start without a link).
+        venue_columns = [row[1] for row in conn.execute("PRAGMA table_info(venues)")]
+        if "maps_url" not in venue_columns:
+            conn.execute("ALTER TABLE venues ADD COLUMN maps_url TEXT NOT NULL DEFAULT ''")
+
+        # Support tickets made before tickets had to name an event start without one.
+        support_columns = [row[1] for row in conn.execute("PRAGMA table_info(support_tickets)")]
+        if "event_title" not in support_columns:
+            conn.execute("ALTER TABLE support_tickets ADD COLUMN event_title TEXT NOT NULL DEFAULT ''")
+
         # Check bookings table for client_name column
+        # Users made before currency preferences existed default to AED.
+        user_columns = [row[1] for row in conn.execute("PRAGMA table_info(users)")]
+        if "currency" not in user_columns:
+            conn.execute(f"ALTER TABLE users ADD COLUMN currency TEXT NOT NULL DEFAULT '{DEFAULT_CURRENCY}'")
+        # Users made before sign-up dates and bans existed: the date is backfilled below, nobody starts banned.
+        if "created_at" not in user_columns:
+            conn.execute("ALTER TABLE users ADD COLUMN created_at TEXT")
+        if "banned" not in user_columns:
+            conn.execute("ALTER TABLE users ADD COLUMN banned INTEGER NOT NULL DEFAULT 0")
+            conn.execute("ALTER TABLE users ADD COLUMN banned_at TEXT")
+            conn.execute("ALTER TABLE users ADD COLUMN banned_by TEXT")
+        # Non-customer accounts give a 16-digit SSN: only a salted hash and the last 4 digits are kept.
+        if "ssn_hash" not in user_columns:
+            conn.execute("ALTER TABLE users ADD COLUMN ssn_hash TEXT")
+            conn.execute("ALTER TABLE users ADD COLUMN ssn_last4 TEXT")
+
         booking_columns = [row[1] for row in conn.execute("PRAGMA table_info(bookings)")]
         if "client_name" not in booking_columns:
             conn.execute("ALTER TABLE bookings ADD COLUMN client_name TEXT DEFAULT ''")
@@ -279,40 +366,112 @@ def init_db():
             exists = conn.execute("SELECT 1 FROM users WHERE lower(email) = ?", (demo_email.lower(),)).fetchone()
             if not exists:
                 conn.execute(
-                    "INSERT INTO users (email, password, role, phone) VALUES (?, ?, ?, ?)",
-                    (demo_email, hash_password(demo_password), demo_role, None),
+                    "INSERT INTO users (email, password, role, phone, created_at) VALUES (?, ?, ?, ?, ?)",
+                    (demo_email, hash_password(demo_password), demo_role, None, _now()),
+                )
+            demo_ssn = DEMO_SSNS.get(demo_role)
+            if demo_ssn:
+                conn.execute(
+                    "UPDATE users SET ssn_hash = ?, ssn_last4 = ? WHERE lower(email) = ? AND ssn_hash IS NULL",
+                    (hash_password(demo_ssn), demo_ssn[-4:], demo_email.lower()),
                 )
 
+        # Accounts without a sign-up date (made before it was recorded): use their first booking or
+        # support ticket, the earliest sign of the account we have, otherwise the time of this upgrade.
+        undated = conn.execute("SELECT rowid, email FROM users WHERE created_at IS NULL OR created_at = ''").fetchall()
+        for rowid, user_email in undated:
+            first_seen = conn.execute(
+                "SELECT MIN(t) FROM ("
+                "SELECT created_at AS t FROM bookings WHERE lower(customer_email) = lower(?) "
+                "UNION ALL SELECT created_at FROM support_tickets WHERE lower(customer_email) = lower(?))",
+                (user_email, user_email),
+            ).fetchone()[0]
+            conn.execute("UPDATE users SET created_at = ? WHERE rowid = ?", (first_seen or _now(), rowid))
 
-def register_user(email, password, role="Customer", phone=None):
-    if role not in ROLES:
+
+def register_user(email, password, role="Customer", phone=None, ssn=None):
+    if role not in SIGNUP_ROLES:
         role = "Customer"
     email = (email or "").strip().lower()
-    if not email or not password or email_exists(email):
+    if not email or not password or email_exists(email) or ssn_error(role, ssn):
         return False
+    ssn = clean_ssn(ssn) if role != "Customer" else ""
     try:
         with _connect() as conn:
             conn.execute(
-                "INSERT INTO users (email, password, role, phone) VALUES (?, ?, ?, ?)",
-                (email, hash_password(password), role, phone),
+                "INSERT INTO users (email, password, role, phone, created_at, ssn_hash, ssn_last4) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (email, hash_password(password), role, phone, _now(),
+                 hash_password(ssn) if ssn else None, ssn[-4:] if ssn else None),
             )
         return True
     except sqlite3.IntegrityError:
         return False
 
 
-def check_login(email, password):
+def login_status(email, password):
+    """'ok', 'invalid' (unknown email or wrong password) or 'banned' (right password, banned account)."""
     email = (email or "").strip()
     with _connect() as conn:
         row = conn.execute(
-            "SELECT email, password FROM users WHERE lower(email) = lower(?)", (email,)
+            "SELECT email, password, banned FROM users WHERE lower(email) = lower(?)", (email,)
         ).fetchone()
         if row is None or not verify_password(password, row[1]):
-            return False
+            return "invalid"
         if not row[1].startswith(_HASH_PREFIX):
             # Upgrade an old plain-text password to a salted hash after a successful login.
             conn.execute("UPDATE users SET password = ? WHERE email = ?", (hash_password(password), row[0]))
-    return True
+        if row[2]:
+            return "banned"
+    return "ok"
+
+
+def check_login(email, password):
+    return login_status(email, password) == "ok"
+
+
+def is_admin(email):
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM users WHERE lower(email) = lower(?) AND role = ? AND banned = 0",
+            ((email or "").strip(), ADMIN_ROLE),
+        ).fetchone()
+    return row is not None
+
+
+def get_all_users(admin_email):
+    """Every account, newest sign-up first. Only an admin may list them (None otherwise)."""
+    if not is_admin(admin_email):
+        return None
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT email, role, created_at, banned, banned_at, banned_by FROM users "
+            "ORDER BY created_at DESC, lower(email)"
+        ).fetchall()
+    return [{"email": r[0], "role": r[1] or "Customer", "created_at": r[2] or "", "banned": bool(r[3]),
+             "banned_at": r[4] or "", "banned_by": r[5] or ""} for r in rows]
+
+
+def set_user_banned(admin_email, email, banned=True):
+    """Ban (or restore) an account. Admins cannot ban themselves or another admin."""
+    admin_email = (admin_email or "").strip()
+    email = (email or "").strip()
+    if not is_admin(admin_email):
+        return {"success": False, "message": "Only an admin can do this."}
+    if email.lower() == admin_email.lower():
+        return {"success": False, "message": "You cannot ban your own account."}
+    with _connect() as conn:
+        row = conn.execute("SELECT role FROM users WHERE lower(email) = lower(?)", (email,)).fetchone()
+        if row is None:
+            return {"success": False, "message": "No account with that email."}
+        if row[0] == ADMIN_ROLE:
+            return {"success": False, "message": "Admin accounts cannot be banned."}
+        if banned:
+            conn.execute("UPDATE users SET banned = 1, banned_at = ?, banned_by = ? WHERE lower(email) = lower(?)",
+                         (_now(), admin_email, email))
+        else:
+            conn.execute("UPDATE users SET banned = 0, banned_at = NULL, banned_by = NULL WHERE lower(email) = lower(?)",
+                         (email,))
+    return {"success": True, "message": f"{email} was {'banned' if banned else 'restored'}."}
 
 
 def get_user_email(email):
@@ -328,10 +487,19 @@ def get_role(email):
     return row[0] if row and row[0] else "Customer"
 
 
-def get_password_by_email(email):
+def get_currency(email):
     with _connect() as conn:
-        row = conn.execute("SELECT password FROM users WHERE email = ?", (email,)).fetchone()
-    return row[0] if row else None
+        row = conn.execute("SELECT currency FROM users WHERE lower(email) = lower(?)", ((email or "").strip(),)).fetchone()
+    return row[0] if row and row[0] in CURRENCIES else DEFAULT_CURRENCY
+
+
+def set_currency(email, currency):
+    currency = (currency or "").strip().upper()
+    if currency not in CURRENCIES:
+        return False
+    with _connect() as conn:
+        cursor = conn.execute("UPDATE users SET currency = ? WHERE lower(email) = lower(?)", (currency, (email or "").strip()))
+    return cursor.rowcount > 0
 
 
 def update_password(email, new_password):
@@ -355,11 +523,15 @@ def phone_exists(phone):
 
 
 # --- Support Tickets ---
-def create_support_ticket(customer_email, subject, message):
+def create_support_ticket(customer_email, subject, message, event_title=""):
+    """The ticket must be about an event: one that is listed now, or one the customer has booked before."""
     customer_email = (customer_email or "").strip()
     subject = (subject or "").strip()
     message = (message or "").strip()
+    event_title = (event_title or "").strip()
 
+    if not event_title:
+        return {"success": False, "message": "Please choose the event your message is about."}
     if not subject or not message:
         return {"success": False, "message": "Subject and message are required."}
     if len(subject) < 3:
@@ -368,6 +540,14 @@ def create_support_ticket(customer_email, subject, message):
         return {"success": False, "message": "Message must be at least 10 characters."}
 
     with _connect() as conn:
+        listed = conn.execute("SELECT 1 FROM events WHERE lower(title) = lower(?)", (event_title,)).fetchone()
+        booked = conn.execute(
+            "SELECT 1 FROM bookings WHERE lower(customer_email) = lower(?) AND lower(event_title) = lower(?)",
+            (customer_email, event_title),
+        ).fetchone()
+        if not listed and not booked:
+            return {"success": False, "message": "Please choose an event from the list."}
+
         open_count = conn.execute(
             "SELECT COUNT(*) FROM support_tickets WHERE lower(customer_email) = lower(?) AND status = 'Open'",
             (customer_email,),
@@ -379,8 +559,8 @@ def create_support_ticket(customer_email, subject, message):
             }
 
         cursor = conn.execute(
-            "INSERT INTO support_tickets (customer_email, subject, message, status) VALUES (?, ?, ?, 'Open')",
-            (customer_email, subject, message),
+            "INSERT INTO support_tickets (customer_email, event_title, subject, message, status) VALUES (?, ?, ?, ?, 'Open')",
+            (customer_email, event_title, subject, message),
         )
         ticket_id = cursor.lastrowid
     return {"success": True, "message": "Support ticket created.", "ticket_id": ticket_id}
@@ -389,21 +569,21 @@ def create_support_ticket(customer_email, subject, message):
 def get_support_tickets_by_customer(customer_email):
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT id, subject, message, status, created_at FROM support_tickets "
+            "SELECT id, subject, message, status, created_at, event_title FROM support_tickets "
             "WHERE lower(customer_email) = lower(?) ORDER BY id DESC",
             ((customer_email or "").strip(),),
         ).fetchall()
-    return [{"id": r[0], "subject": r[1], "message": r[2], "status": r[3], "created_at": r[4]} for r in rows]
+    return [{"id": r[0], "subject": r[1], "message": r[2], "status": r[3], "created_at": r[4], "event_title": r[5] or ""} for r in rows]
 
 
 def get_open_support_tickets():
     """Oldest first, so the longest waiting customer is answered first."""
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT id, customer_email, subject, message, created_at FROM support_tickets "
+            "SELECT id, customer_email, subject, message, created_at, event_title FROM support_tickets "
             "WHERE status = 'Open' ORDER BY id"
         ).fetchall()
-    return [{"id": r[0], "customer_email": r[1], "subject": r[2], "message": r[3], "created_at": r[4]} for r in rows]
+    return [{"id": r[0], "customer_email": r[1], "subject": r[2], "message": r[3], "created_at": r[4], "event_title": r[5] or ""} for r in rows]
 
 
 def resolve_support_ticket(ticket_id, staff_email):
@@ -414,3 +594,73 @@ def resolve_support_ticket(ticket_id, staff_email):
             ((staff_email or "").strip(), ticket_id),
         ).rowcount
     return bool(updated)
+
+
+# --- Reports (any signed-in user except admins files one, admins resolve them) ---
+MAX_OPEN_REPORTS = 5
+
+
+def create_report(reporter_email, category, offender_type, subject, description, offender_email=""):
+    reporter_email = (reporter_email or "").strip()
+    category = (category or "").strip()
+    offender_type = (offender_type or "").strip()
+    subject = (subject or "").strip()
+    description = (description or "").strip()
+    offender_email = (offender_email or "").strip()
+
+    if not category or not offender_type:
+        return {"success": False, "message": "Please choose what you are reporting and who it is about."}
+    if len(subject) < 3:
+        return {"success": False, "message": "Summary must be at least 3 characters."}
+    if len(description) < 10:
+        return {"success": False, "message": "Please describe what happened (at least 10 characters)."}
+
+    with _connect() as conn:
+        reporter = conn.execute("SELECT email, role, banned FROM users WHERE lower(email) = lower(?)", (reporter_email,)).fetchone()
+        if reporter is None or reporter[2]:
+            return {"success": False, "message": "Unknown account."}
+        if reporter[1] == ADMIN_ROLE:
+            return {"success": False, "message": "Admins handle reports instead of filing them."}
+        if offender_email and offender_email.lower() == reporter[0].lower():
+            return {"success": False, "message": "You cannot report your own account."}
+        open_count = conn.execute(
+            "SELECT COUNT(*) FROM reports WHERE lower(reporter_email) = lower(?) AND status = 'Open'", (reporter_email,)
+        ).fetchone()[0]
+        if open_count >= MAX_OPEN_REPORTS:
+            return {"success": False, "message": f"You already have {MAX_OPEN_REPORTS} open reports. Please wait for an admin to review them."}
+        cursor = conn.execute(
+            "INSERT INTO reports (reporter_email, reporter_role, category, offender_type, offender_email, subject, description, "
+            "status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'Open', ?)",
+            (reporter[0], reporter[1] or "Customer", category, offender_type, offender_email, subject, description, _now()),
+        )
+    return {"success": True, "message": "Report sent to the admin team.", "report_id": cursor.lastrowid}
+
+
+_REPORT_FIELDS = ("id", "reporter_email", "reporter_role", "category", "offender_type", "offender_email", "subject",
+                  "description", "status", "created_at", "resolved_by", "resolved_at", "resolution")
+
+
+def get_reports(admin_email):
+    """All reports: open ones first (oldest first, so the longest waiting is handled first), then resolved ones."""
+    if not is_admin(admin_email):
+        return None
+    with _connect() as conn:
+        rows = conn.execute(
+            f"SELECT {', '.join(_REPORT_FIELDS)} FROM reports "
+            "ORDER BY status = 'Resolved', CASE WHEN status = 'Open' THEN id ELSE -id END"
+        ).fetchall()
+    return [{k: (v if v is not None else "") for k, v in zip(_REPORT_FIELDS, r)} for r in rows]
+
+
+def resolve_report(admin_email, report_id, resolution="Resolved"):
+    if not is_admin(admin_email):
+        return {"success": False, "message": "Only an admin can do this."}
+    with _connect() as conn:
+        updated = conn.execute(
+            "UPDATE reports SET status = 'Resolved', resolved_by = ?, resolved_at = ?, resolution = ? "
+            "WHERE id = ? AND status = 'Open'",
+            ((admin_email or "").strip(), _now(), (resolution or "Resolved").strip(), report_id),
+        ).rowcount
+    if not updated:
+        return {"success": False, "message": "That report is already resolved or no longer exists."}
+    return {"success": True, "message": "Report resolved."}

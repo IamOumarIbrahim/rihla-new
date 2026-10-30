@@ -1,13 +1,17 @@
-import math
-import random
+import os
 import re
 import tkinter as tk
 from tkinter import messagebox
+from PIL import Image, ImageTk
 
 import navigate
 import theme as t
-from config import ROLES, MIN_PASSWORD_LENGTH
+from brand_logo import draw_logo
+from config import SIGNUP_ROLES, MIN_PASSWORD_LENGTH
 from database import register_user, email_exists, phone_exists
+from digit_boxes import DigitBoxes
+
+SSN_LENGTH = 16
 from ui import clear_window
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -18,36 +22,43 @@ def _valid_phone(value):
     digits = re.sub(r"\s+", "", value)
     return digits.isascii() and digits.isdigit() and len(digits) == 9
 
-_rng = random.Random(7)
-_STARS = [(_rng.random(), _rng.random() * 0.5) for _ in range(45)]
+_IMAGE_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "assets", "background.jpg"))
+_raw_bg_image = None
+if os.path.exists(_IMAGE_PATH):
+    try:
+        _raw_bg_image = Image.open(_IMAGE_PATH)
+        _raw_bg_image.load()
+    except OSError:
+        _raw_bg_image = None  # Broken image file: fall back to the plain dark panel
 
-
-def _draw_dune(canvas, w, h, base, amp, freq, phase, color):
-    points = []
-    for x in range(-10, w + 20, 10):
-        y = h * base + h * amp * math.sin(x / max(w, 1) * freq * math.pi + phase)
-        points.extend((x, y))
-    points.extend((w + 20, h + 10, -10, h + 10))
-    canvas.create_polygon(points, fill=color, outline="")
+_bg_photo = None
 
 
 def _draw_scene(canvas, w, h):
+    global _bg_photo
     canvas.delete("all")
-    for rx, ry in _STARS:
-        x, y = rx * w, ry * h
-        canvas.create_oval(x - 1.5, y - 1.5, x + 1.5, y + 1.5, fill="#aab7c4", outline="")
 
-    cx, cy, r = w * 0.5, h * 0.66, min(w, h) * 0.12
-    canvas.create_oval(cx - r * 1.7, cy - r * 1.7, cx + r * 1.7, cy + r * 1.7, fill="#34495e", outline="")
-    canvas.create_oval(cx - r * 1.35, cy - r * 1.35, cx + r * 1.35, cy + r * 1.35, fill="#4a6580", outline="")
-    canvas.create_oval(cx - r, cy - r, cx + r, cy + r, fill="#f5b041", outline="")
+    if w < 1 or h < 1:
+        return
 
-    _draw_dune(canvas, w, h, 0.74, 0.040, 2.2, 0.5, "#e67e22")
-    _draw_dune(canvas, w, h, 0.82, 0.035, 3.0, 2.0, "#d35400")
-    _draw_dune(canvas, w, h, 0.90, 0.030, 2.0, 4.0, "#a04000")
+    if _raw_bg_image:
+        img_w, img_h = _raw_bg_image.size
 
-    canvas.create_text(w / 2, h * 0.20, text="Rihla", fill="white", font=(t.FONT, 46, "bold"))
-    canvas.create_text(w / 2, h * 0.20 + 62, text="Start your journey with us.", fill="#bdc3c7", font=(t.FONT, 14))
+        # Scale to cover the canvas without stretching, then crop the overflow from the center
+        scale = max(w / img_w, h / img_h)
+        new_w = max(int(img_w * scale), w)
+        new_h = max(int(img_h * scale), h)
+        resized_img = _raw_bg_image.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        left = (new_w - w) // 2
+        top = (new_h - h) // 2
+        _bg_photo = ImageTk.PhotoImage(resized_img.crop((left, top, left + w, top + h)))
+        canvas.create_image(0, 0, anchor=tk.NW, image=_bg_photo)
+    else:
+        canvas.config(bg=t.DARK)
+
+    # Logo in place of the title text; fall back to plain text if the image is missing
+    if not draw_logo(canvas, w, h, h * 0.20 + 25):
+        canvas.create_text(w / 2, h * 0.20, text="Rihla", fill="white", font=(t.FONT, 46, "bold"))
 
 
 def _build_brand_panel(parent):
@@ -87,6 +98,32 @@ def show_create_account_screen(root):
 
     tk.Label(form, text="Create Account", font=(t.FONT, 22, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(anchor="w")
     tk.Label(form, text="Fill in your details to get started", font=(t.FONT, 10), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", pady=(2, 10))
+
+    # Account type: customers sign up as before; every other role must also give a 16-digit SSN.
+    role_row = tk.Frame(form, bg=t.CARD_BG)
+    role_row.pack(fill=tk.X, pady=(2, 0))
+    tk.Label(role_row, text="ACCOUNT TYPE", font=(t.FONT, 9, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT)
+    role_var = tk.StringVar(value="Customer")
+    role_menu = tk.OptionMenu(role_row, role_var, *SIGNUP_ROLES)
+    role_menu.config(font=(t.FONT, 10), bg=t.FIELD_BG, fg=t.TEXT, activebackground=t.FIELD_BG, relief="flat", bd=0,
+                     highlightthickness=1, highlightbackground=t.BORDER, anchor="w", cursor="hand2", width=14)
+    role_menu["menu"].config(font=(t.FONT, 10))
+    role_menu.pack(side=tk.RIGHT)
+
+    ssn_section = tk.Frame(form, bg=t.CARD_BG)
+    tk.Label(ssn_section, text=f"SSN ({SSN_LENGTH} DIGITS)", font=(t.FONT, 9, "bold"),
+             bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", pady=(8, 3))
+    ssn_boxes = DigitBoxes(ssn_section, groups=4, group_size=4, font_size=12, box_width=1)
+    ssn_boxes.pack(anchor="w")
+
+    def on_role_change(*_):
+        if role_var.get() == "Customer":
+            ssn_boxes.set("")
+            ssn_section.pack_forget()
+        else:
+            ssn_section.pack(fill=tk.X, after=role_row)
+
+    role_var.trace_add("write", on_role_change)
 
     _, reg_email = _make_field(form, "EMAIL")
     verification_status = {"email": False, "phone": False, "email_value": None, "phone_value": None}
@@ -238,7 +275,20 @@ def show_create_account_screen(root):
             messagebox.showerror("Error", "You must agree to the Terms & Conditions.")
             return
 
-        if register_user(email, pwd, "Customer", phone=phone):
+        role = role_var.get()
+        ssn = None
+        if role != "Customer":
+            ssn = ssn_boxes.get()
+            if not ssn_boxes.is_complete():
+                ssn_boxes.set_error(True)
+                messagebox.showerror("Error", f"{role} accounts must enter all {SSN_LENGTH} digits of their SSN.")
+                return
+            if len(set(ssn)) == 1:
+                ssn_boxes.set_error(True)
+                messagebox.showerror("Error", "Please enter your real SSN.")
+                return
+
+        if register_user(email, pwd, role, phone=phone, ssn=ssn):
             navigate.show_welcome(root, email)
         else:
             messagebox.showerror("Error", "Registration failed. An account with this email already exists.")

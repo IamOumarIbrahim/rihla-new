@@ -1,11 +1,13 @@
 from datetime import datetime
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, ttk
 
 from ui import clear_window
 import navigate
-from config import MIN_PASSWORD_LENGTH
-from database import check_login, update_password
+from config import MIN_PASSWORD_LENGTH, ADMIN_ROLE
+from database import check_login, update_password, get_preferred_currency, set_preferred_currency
+from pricing import CURRENCIES, normalize_currency
+from .report_view import ReportView
 import theme as t
 import icons as ic
 
@@ -39,6 +41,13 @@ class BaseWelcomeScreen:
         bottom_frame = tk.Frame(self.nav_bar, bg="#2c3e50")
         bottom_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(0, 20))
 
+        # Every role except admins can file a report; admins read them instead.
+        if self.role_name != ADMIN_ROLE:
+            report_btn = tk.Button(bottom_frame, text="Report", width=20, relief="flat", bg="#34495e", fg="white",
+                                   font=(t.FONT, 9, "bold"), cursor="hand2", command=self.open_report_page)
+            report_btn.pack(pady=(0, 8))
+            t.add_hover(report_btn, "#34495e", t.PRIMARY)
+
         settings_btn = tk.Button(bottom_frame, text=f"Settings", width=20, relief="flat", bg="#34495e", fg="white",
                                  font=(t.FONT, 9, "bold"), cursor="hand2", command=self.open_settings_modal)
         settings_btn.pack(pady=(0, 8))
@@ -62,7 +71,8 @@ class BaseWelcomeScreen:
         self.nav_buttons_container.pack(fill=tk.BOTH, expand=True)
 
     def add_nav_button(self, text, command=None, icon=None):
-        if icon:
+        # Side nav stays text-only; the plus symbol is the one icon we keep
+        if icon == "plus":
             text = f"{ic.emoji(icon)} {text}"
         btn = tk.Button(self.nav_buttons_container, text=text, width=20, relief="flat", bg="#34495e", fg="white",
                         font=(t.FONT, 9, "bold"), cursor="hand2", command=command)
@@ -126,14 +136,38 @@ class BaseWelcomeScreen:
         tk.Label(self.scrollable_frame, text=f"Welcome back, {self.username}!",
                  font=(t.FONT, 20, "bold"), bg="#ecf0f1", fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 5))
 
+    def open_report_page(self):
+        ReportView(self).build_report_content()
+
     def open_settings_modal(self):
         modal = tk.Toplevel(self.root)
-        modal.title("Settings - Change password")
-        modal.geometry("380x380")
+        modal.title("Settings")
+        modal.geometry("380x500")
         modal.transient(self.root)
         modal.grab_set()
 
         tk.Label(modal, text=f"Signed in as {self.email}", font=(t.FONT, 10, "italic")).pack(pady=(15, 10))
+
+        # Preferred currency: used as the default in the payment window.
+        tk.Label(modal, text="Preferred currency", font=(t.FONT, 10, "bold")).pack(anchor="w", padx=30)
+        currency_row = tk.Frame(modal)
+        currency_row.pack(fill=tk.X, padx=30, pady=(0, 4))
+        currency_var = tk.StringVar(value=normalize_currency(get_preferred_currency(self.email)))
+        ttk.Combobox(currency_row, textvariable=currency_var, values=CURRENCIES, state="readonly",
+                     width=8).pack(side=tk.LEFT)
+        currency_status = tk.Label(modal, text="", font=(t.FONT, 9), fg="#27ae60")
+
+        def save_currency():
+            if set_preferred_currency(self.email, currency_var.get()):
+                currency_status.config(text=f"Preferred currency set to {currency_var.get()}.", fg="#27ae60")
+            else:
+                currency_status.config(text="Could not save the currency. Please try again.", fg="#c0392b")
+
+        tk.Button(currency_row, text="Save currency", bg=t.PRIMARY, fg="white", font=(t.FONT, 9, "bold"),
+                  relief="flat", cursor="hand2", command=save_currency).pack(side=tk.LEFT, padx=(10, 0), ipadx=6)
+        currency_status.pack(anchor="w", padx=30, pady=(0, 10))
+
+        tk.Label(modal, text="Change password", font=(t.FONT, 11, "bold")).pack(anchor="w", padx=30, pady=(5, 5))
         entries = {}
         for key, label in (("old", "Current password"), ("new", "New password"), ("confirm", "Confirm new password")):
             tk.Label(modal, text=label, font=(t.FONT, 10, "bold")).pack(anchor="w", padx=30)

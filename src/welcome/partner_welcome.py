@@ -9,7 +9,8 @@ from database import (
     clear_cart, checkout_cart
 )
 from capacity_bar import CapacityBar
-from payment import show_demo_payment_modal
+from payment import show_demo_payment_modal, show_booking_details_window
+from pricing import vat_breakdown
 import theme as t
 import icons as ic
 import event_images
@@ -300,21 +301,26 @@ class PartnerWelcomeScreen(BaseWelcomeScreen):
                  font=(t.FONT, 12, "bold"), bg=t.DARK, fg="white").pack(side=tk.LEFT)
 
         def do_singular_payment():
-            def on_payment_success():
+            def on_payment_success(payment):
                 res = checkout_cart(self.email)
-                if not res["success"]:
-                    messagebox.showerror("Checkout Failed", res["message"])
-                    self.build_shopping_list_content()
-                    return
+                if res["success"]:
+                    # Bookings come back in the same order as the shopping list.
+                    details = [{
+                        "title": b["event_title"], "base": it["total_price"], "venue": b.get("venue_name"),
+                        "date": b.get("booking_date"), "time": b.get("event_time"), "guests": b["guests"],
+                        "client_name": b.get("client_name"),
+                        "ticket_code": format_ticket_code(b["ticket_code"]),
+                    } for b, it in zip(res["bookings"], items)]
+                    after_close = self.build_bookings_content
+                else:
+                    details = [{
+                        "title": it["title"], "base": it["total_price"], "venue": it.get("venue_name"),
+                        "date": it["booking_date"], "guests": it["guests"], "client_name": it["client_name"],
+                    } for it in items]
+                    after_close = self.build_shopping_list_content
 
-                booked = res["bookings"]
-                codes_summary = "\n".join([f"• {b['event_title']} ({b['guests']} guests) - Code: {format_ticket_code(b['ticket_code'])}" for b in booked])
-
-                messagebox.showinfo(
-                    "All Bookings Confirmed!",
-                    f"Singular Payment Approved!\n\nAll {len(booked)} events have been confirmed:\n\n{codes_summary}\n\nReview all ticket codes in Partner Bookings."
-                )
-                self.build_bookings_content()
+                show_booking_details_window(self.root, details, payment, self.email,
+                                            error=None if res["success"] else res["message"], on_close=after_close)
 
             modal_items = [{
                 "title": it["title"],
@@ -324,9 +330,10 @@ class PartnerWelcomeScreen(BaseWelcomeScreen):
                 "client_name": it["client_name"]
             } for it in items]
 
-            show_demo_payment_modal(self.root, f"OTA Partner Batch Payment ({len(items)} Events)", modal_items, grand_total, on_payment_success)
+            show_demo_payment_modal(self.root, f"OTA Partner Batch Payment ({len(items)} Events)", modal_items, grand_total,
+                                    on_payment_success, email=self.email)
 
-        pay_all_btn = tk.Button(summary_bar, text=f"Pay All ({grand_total} AED)",
+        pay_all_btn = tk.Button(summary_bar, text=f"Pay All ({vat_breakdown(grand_total)[2]:,.2f} AED incl. VAT)",
                                 font=(t.FONT, 11, "bold"), bg=t.ACCENT, fg="white", relief="flat",
                                 cursor="hand2", command=do_singular_payment)
         payment_img = ic.get_icon("payment", size=16, color="#ffffff", master=summary_bar)

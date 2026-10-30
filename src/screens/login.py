@@ -5,8 +5,9 @@ from PIL import Image, ImageTk
 
 import navigate
 import theme as t
+from brand_logo import draw_logo
 from config import DEMO_ACCOUNTS, DEFAULT_LOGIN
-from database import check_login, get_user_email
+from database import login, get_user_email
 from screens.social_login import open_social_login
 from ui import clear_window
 
@@ -49,9 +50,9 @@ def _draw_scene(canvas, w, h):
     else:
         canvas.config(bg=t.DARK)
 
-    # Title and tagline
-    canvas.create_text(w / 2, h * 0.20, text="Rihla", fill="white", font=(t.FONT, 46, "bold"))
-    canvas.create_text(w / 2, h * 0.20 + 62, text="Discover the desert, your way.", fill="#bdc3c7", font=(t.FONT, 14))
+    # Logo in place of the title text; fall back to plain text if the image is missing
+    if not draw_logo(canvas, w, h, h * 0.20 + 25):
+        canvas.create_text(w / 2, h * 0.20, text="Rihla", fill="white", font=(t.FONT, 46, "bold"))
 
 
 def _build_brand_panel(parent):
@@ -136,10 +137,11 @@ def show_login_screen(root, prefilled_email=None, prefilled_password=None):
             messagebox.showerror("Error", "All fields are required.")
             return
 
-        if check_login(email, password):
+        ok, message = login(email, password)
+        if ok:
             navigate.show_welcome(root, get_user_email(email) or email)
         else:
-            messagebox.showerror("Error", "Invalid email or password.")
+            messagebox.showerror("Error", message)
 
     email_entry.bind("<Return>", handle_login)
     password_entry.bind("<Return>", handle_login)
@@ -184,12 +186,13 @@ def show_login_screen(root, prefilled_email=None, prefilled_password=None):
 
     chips = tk.Frame(form, bg=t.CARD_BG)
     chips.pack(fill=tk.X)
+    per_row = 3  # two rows of chips, so all six roles fit the form width
     for i, role in enumerate(DEMO_ACCOUNTS):
-        chips.columnconfigure(i, weight=1, uniform="chip")
+        chips.columnconfigure(i % per_row, weight=1, uniform="chip")
         chip = tk.Button(chips, text=role, font=(t.FONT, 9), bd=0, relief="flat",
                          bg=t.CHIP_BG, fg=t.TEXT, activebackground=t.CHIP_HOVER, cursor="hand2",
                          command=lambda r=role: set_demo(r))
-        chip.grid(row=0, column=i, sticky="ew", padx=2, ipady=5)
+        chip.grid(row=i // per_row, column=i % per_row, sticky="ew", padx=2, pady=2, ipady=5)
         t.add_hover(chip, t.CHIP_BG, t.CHIP_HOVER)
 
     # ----- bottom links -----

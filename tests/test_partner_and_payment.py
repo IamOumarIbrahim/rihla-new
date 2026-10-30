@@ -6,8 +6,10 @@ import tkinter as tk
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "server"))
 
-import database as d
+import db_test_helpers as d
+import database_core
 from payment import verify_demo_payment, DEMO_PAYMENT_DETAILS
 from capacity_bar import CapacityBar
 
@@ -24,7 +26,7 @@ class PartnerAndPaymentTests(unittest.TestCase):
         self.root = tk.Tk()
         self.root.withdraw()
         self.tmp = tempfile.TemporaryDirectory()
-        d.DB_PATH = os.path.join(self.tmp.name, "test_partner.db")
+        database_core.DB_PATH = os.path.join(self.tmp.name, "test_partner.db")
         d.init_db()
         self.events = {e["title"]: e for e in d.get_all_events()}
         self.safari = self.events["Red Dune Sunset Safari and Royal BBQ Dinner"]
@@ -45,20 +47,20 @@ class PartnerAndPaymentTests(unittest.TestCase):
         bar = CapacityBar(self.root, remaining=20, total=20)
         self.assertEqual(bar.remaining, 20)
         self.assertEqual(bar.total, 20)
-        self.assertEqual(bar.label.cget("text"), "20 remaining")
+        self.assertEqual(bar.label.cget("text"), "20 of 20 remaining")
 
         # More than 5 remaining
         bar.set_capacity(12, 20)
-        self.assertEqual(bar.label.cget("text"), "12 remaining")
+        self.assertEqual(bar.label.cget("text"), "12 of 20 remaining")
 
         # 5 or less remaining -> Hurry up!
         bar.set_capacity(5, 20)
         self.assertIn("Hurry up!", bar.label.cget("text"))
-        self.assertIn("5 remaining", bar.label.cget("text"))
+        self.assertIn("5 of 20 remaining", bar.label.cget("text"))
 
         bar.set_capacity(1, 20)
         self.assertIn("Hurry up!", bar.label.cget("text"))
-        self.assertIn("1 remaining", bar.label.cget("text"))
+        self.assertIn("1 of 20 remaining", bar.label.cget("text"))
 
         # 0 remaining -> Fully booked
         bar.set_capacity(0, 20)
