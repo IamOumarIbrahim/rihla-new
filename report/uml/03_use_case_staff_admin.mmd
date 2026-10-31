@@ -1,0 +1,20 @@
+%% Use case diagram: Staff and Admin
+flowchart LR
+  ST[["«actor» Staff"]]
+  AD[["«actor» Admin"]]
+  subgraph S["Rihla system"]
+    direction TB
+    S1(["Sign up with SSN, venue and manager email"])
+    S2(["Check in ticket (own venue only)"])
+    S3(["See the schedule of own venue for today"])
+    S4(["Resolve support tickets of own venue"])
+    S5(["Change venue and manager in Settings"])
+    S6(["Report a problem to admin"])
+    D1(["List all user accounts"])
+    D2(["Ban or restore account"])
+    D3(["Read and resolve reports"])
+    D4(["List and cancel any booking"])
+  end
+  ST --- S1 & S2 & S3 & S4 & S5 & S6
+  AD --- D1 & D2 & D3 & D4
+  D3 -. extend .-> D2

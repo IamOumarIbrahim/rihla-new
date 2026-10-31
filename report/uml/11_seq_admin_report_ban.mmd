@@ -1,0 +1,26 @@
+%% Sequence diagram: a user reports a problem and the admin bans the offender
+sequenceDiagram
+  autonumber
+  actor U as Non-admin user
+  actor A as Admin
+  participant RV as ReportView
+  participant AW as AdminWelcomeScreen
+  participant SV as server.py
+  participant DC as database_core
+  participant DB as users.db
+  U->>RV: fill category, offender, summary, details
+  RV->>SV: POST /api/reports
+  SV->>DC: create_report()
+  DC->>DB: check reporter (not banned, not admin, max 5 open)
+  DC->>DB: INSERT reports (Open)
+  A->>AW: open Reports
+  AW->>SV: GET /api/admin/reports?admin_email=
+  SV->>DC: get_reports(admin) with is_admin check
+  DC-->>AW: open reports first
+  A->>AW: Ban offender
+  AW->>SV: POST /api/admin/users/ban
+  SV->>DC: set_user_banned(admin, email)
+  DC->>DB: UPDATE users SET banned = 1 (not self, not an admin)
+  AW->>SV: POST /api/admin/reports/{id}/resolve
+  SV->>DC: resolve_report()
+  Note over U,DB: Next login of the banned user returns 403 and _blocked() refuses its writes

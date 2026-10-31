@@ -1,0 +1,68 @@
+%% Design class diagram, part 2: client modules and server modules
+classDiagram
+  direction LR
+  class BaseWelcomeScreen
+  class CustomerWelcomeScreen
+  class PartnerWelcomeScreen
+  class api_client {
+    <<module>>
+    +BASE_URL
+    +login(email, password)
+    +create_booking(...)
+    +cancel_booking(id, email, reason)
+    +verify_ticket_code(code, title, staff_email)
+  }
+  class pricing {
+    <<module>>
+    +VAT_RATE = 0.05
+    +CURRENCY_RATES
+    +vat_breakdown(base)
+    +refund_breakdown(total, percent)
+    +format_money(amount, currency)
+  }
+  class payment {
+    <<module>>
+    +verify_demo_payment(method, details)
+    +show_demo_payment_modal(...)
+    +show_booking_details_window(...)
+  }
+  class booking_pdf {
+    <<module>>
+    +build_pdf(lines)
+    +save_pdf(lines, filename)
+  }
+  class FlaskServer {
+    <<server.py>>
+    +_blocked(email, roles)
+    +REST endpoints under /api
+  }
+  class database_core {
+    <<module>>
+    +init_db()
+    +register_user(...)
+    +login_status(email, password)
+    +ssn_error(role, ssn)
+    +set_user_banned(admin, email, banned)
+    +create_support_ticket(...)
+    +create_report(...)
+  }
+  class database_events {
+    <<module>>
+    +VAT_RATE = 0.05
+    +create_booking(...)
+    +_book(conn, ...)
+    +_cancel(...)
+    +refund_percent_for(start)
+    +staff_verify_ticket(...)
+    +checkout_cart(email)
+    +dispatch_vehicle_combination(...)
+  }
+  BaseWelcomeScreen ..> api_client : uses
+  CustomerWelcomeScreen ..> payment : uses
+  PartnerWelcomeScreen ..> payment : uses
+  payment ..> pricing
+  payment ..> booking_pdf
+  api_client ..> FlaskServer : HTTP JSON
+  FlaskServer ..> database_core
+  FlaskServer ..> database_events
+  database_events ..> database_core

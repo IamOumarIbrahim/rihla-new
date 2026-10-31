@@ -1,0 +1,10 @@
+%% State diagram: vehicle status
+stateDiagram-v2
+  [*] --> Available: dispatcher registers vehicle
+  Available --> Assigned: dispatched to an event
+  Assigned --> Available: freed, set Available or event deleted
+  Available --> Maintenance: Set Maintenance
+  Assigned --> Maintenance: Set Maintenance (assignment Concluded)
+  Maintenance --> Available: Set Available
+  Available --> [*]: deleted
+  Maintenance --> [*]: deleted

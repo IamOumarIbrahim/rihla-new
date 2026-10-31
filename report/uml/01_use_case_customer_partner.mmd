@@ -1,0 +1,23 @@
+%% Use case diagram: Customer and Partner (travel agency)
+flowchart LR
+  C[["«actor» Customer"]]
+  P[["«actor» Partner"]]
+  subgraph S["Rihla system"]
+    direction TB
+    UC1(["Sign up / log in"])
+    UC2(["Explore and filter tours"])
+    UC3(["View event page, capacity and map link"])
+    UC4(["Book event and pay (VAT, currency)"])
+    UC5(["Download booking PDF"])
+    UC6(["View and cancel own bookings"])
+    UC7(["Review past experience"])
+    UC8(["Open support ticket"])
+    UC9(["Add event to shopping list"])
+    UC10(["Check out whole list in one payment"])
+    UC11(["Report a problem to admin"])
+    UC12(["Set preferred currency"])
+  end
+  C --- UC1 & UC2 & UC3 & UC4 & UC6 & UC7 & UC8 & UC11 & UC12
+  P --- UC1 & UC2 & UC3 & UC4 & UC6 & UC9 & UC10 & UC11 & UC12
+  UC4 -. include .-> UC5
+  UC10 -. include .-> UC5

@@ -1,0 +1,21 @@
+%% Use case diagram: Vendor and Dispatcher
+flowchart LR
+  V[["«actor» Vendor"]]
+  D[["«actor» Dispatcher"]]
+  subgraph S["Rihla system"]
+    direction TB
+    A1(["Sign up with 16-digit SSN / log in"])
+    A2(["Create, edit, delete event (picture, capacity, recurrence)"])
+    A3(["Manage venues and Google Maps link"])
+    A4(["Manage categories"])
+    A5(["View and filter bookings of own events"])
+    A6(["Cancel booking with reason (full refund)"])
+    B1(["Register vehicle"])
+    B2(["Set vehicle status (Available, Maintenance)"])
+    B3(["Assign vehicles to an event"])
+    B4(["Free assigned vehicle"])
+    R(["Report a problem to admin"])
+  end
+  V --- A1 & A2 & A3 & A4 & A5 & A6 & R
+  D --- A1 & B1 & B2 & B3 & B4 & R
+  A2 -. extend .-> A6
