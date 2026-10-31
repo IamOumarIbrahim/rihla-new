@@ -1,0 +1,67 @@
+// EER diagram of server/users.db in Chen notation.
+// Rectangles: entities. Diamonds: relationships. Ovals: attributes.
+// Underlined: key. Double oval: multi-valued. Dashed oval: derived (worked out, not stored).
+// Double line: total participation. Circle with d: disjoint, total specialization (one role per user).
+// Grey entities are shown in full in another part of the diagram.
+// Part: Support tickets and reports
+graph EER {
+  layout=dot; rankdir=LR; nodesep=0.15; ranksep=0.45; splines=true; outputorder=edgesfirst; newrank=true;
+  node [fontname="Helvetica", fontsize=16];
+  edge [fontname="Helvetica", fontsize=15, color="#2C3E50"];
+  SUPPORT_TICKET [shape=box, style="filled,bold", fillcolor="#D6E4F0", fontsize=18];
+  SUPPORT_TICKET__id [shape=ellipse, label=<<U>id</U>>];
+  SUPPORT_TICKET -- SUPPORT_TICKET__id;
+  SUPPORT_TICKET__subject [shape=ellipse, label="subject"];
+  SUPPORT_TICKET -- SUPPORT_TICKET__subject;
+  SUPPORT_TICKET__message [shape=ellipse, label="message"];
+  SUPPORT_TICKET -- SUPPORT_TICKET__message;
+  SUPPORT_TICKET__status [shape=ellipse, label="status"];
+  SUPPORT_TICKET -- SUPPORT_TICKET__status;
+  SUPPORT_TICKET__created_at [shape=ellipse, label="created_at"];
+  SUPPORT_TICKET -- SUPPORT_TICKET__created_at;
+  SUPPORT_TICKET__resolved_at [shape=ellipse, label="resolved_at"];
+  SUPPORT_TICKET -- SUPPORT_TICKET__resolved_at;
+  REPORT [shape=box, style="filled,bold", fillcolor="#D6E4F0", fontsize=18];
+  REPORT__id [shape=ellipse, label=<<U>id</U>>];
+  REPORT -- REPORT__id;
+  REPORT__reporter_role [shape=ellipse, label="reporter_role"];
+  REPORT -- REPORT__reporter_role;
+  REPORT__category [shape=ellipse, label="category"];
+  REPORT -- REPORT__category;
+  REPORT__offender_type [shape=ellipse, label="offender_type"];
+  REPORT -- REPORT__offender_type;
+  REPORT__subject [shape=ellipse, label="subject"];
+  REPORT -- REPORT__subject;
+  REPORT__description [shape=ellipse, label="description"];
+  REPORT -- REPORT__description;
+  REPORT__status [shape=ellipse, label="status"];
+  REPORT -- REPORT__status;
+  REPORT__created_at [shape=ellipse, label="created_at"];
+  REPORT -- REPORT__created_at;
+  REPORT__resolved_at [shape=ellipse, label="resolved_at"];
+  REPORT -- REPORT__resolved_at;
+  REPORT__resolution [shape=ellipse, label="resolution"];
+  REPORT -- REPORT__resolution;
+  USER [shape=box, style="filled", fillcolor="#ECEFF1", color="#7F8C8D", fontsize=18];
+  STAFF [shape=box, style="filled", fillcolor="#ECEFF1", color="#7F8C8D", fontsize=18];
+  ADMIN [shape=box, style="filled", fillcolor="#ECEFF1", color="#7F8C8D", fontsize=18];
+  EVENT [shape=box, style="filled", fillcolor="#ECEFF1", color="#7F8C8D", fontsize=18];
+  R_OPENS [shape=diamond, style=filled, fillcolor="#F9E4B7", label="OPENS", fontsize=14];
+  R_OPENS -- USER [label="1"];
+  R_OPENS -- SUPPORT_TICKET [label="N", color="black:white:black"];
+  R_ASKS_ABOUT [shape=diamond, style=filled, fillcolor="#F9E4B7", label="ASKS_ABOUT", fontsize=14];
+  R_ASKS_ABOUT -- SUPPORT_TICKET [label="N"];
+  R_ASKS_ABOUT -- EVENT [label="1"];
+  R_RESOLVES [shape=diamond, style=filled, fillcolor="#F9E4B7", label="RESOLVES", fontsize=14];
+  R_RESOLVES -- STAFF [label="1"];
+  R_RESOLVES -- SUPPORT_TICKET [label="N"];
+  R_FILES [shape=diamond, style=filled, fillcolor="#F9E4B7", label="FILES", fontsize=14];
+  R_FILES -- USER [label="1"];
+  R_FILES -- REPORT [label="N", color="black:white:black"];
+  R_CONCERNS [shape=diamond, style=filled, fillcolor="#F9E4B7", label="CONCERNS", fontsize=14];
+  R_CONCERNS -- REPORT [label="N"];
+  R_CONCERNS -- USER [label="1"];
+  R_HANDLES [shape=diamond, style=filled, fillcolor="#F9E4B7", label="HANDLES", fontsize=14];
+  R_HANDLES -- ADMIN [label="1"];
+  R_HANDLES -- REPORT [label="N"];
+}

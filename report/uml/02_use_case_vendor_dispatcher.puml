@@ -1,0 +1,45 @@
+@startuml
+' Use case diagram: Vendor and Dispatcher
+!pragma layout smetana
+left to right direction
+skinparam packageStyle rectangle
+skinparam shadowing false
+skinparam usecase {
+  BackgroundColor #EEF2F7
+  BorderColor #1F3A5F
+}
+skinparam actorBorderColor #1F3A5F
+
+actor Vendor as V
+actor Dispatcher as D
+
+rectangle "Rihla system" {
+  usecase "Sign up with 16-digit SSN\n/ log in" as A1
+  usecase "Create, edit, delete event\n(picture, capacity, recurrence)" as A2
+  usecase "Manage venues and\nGoogle Maps link" as A3
+  usecase "Manage categories" as A4
+  usecase "View and filter bookings\nof own events" as A5
+  usecase "Cancel booking with reason\n(full refund)" as A6
+  usecase "Register vehicle" as B1
+  usecase "Set vehicle status\n(Available, Maintenance)" as B2
+  usecase "Assign vehicles to an event" as B3
+  usecase "Free assigned vehicle" as B4
+  usecase "Report a problem to admin" as R
+}
+
+V -- A1
+V -- A2
+V -- A3
+V -- A4
+V -- A5
+V -- A6
+V -- R
+
+A1 -- D
+B1 -- D
+B2 -- D
+B3 -- D
+B4 -- D
+R -- D
+
+@enduml

@@ -1,0 +1,53 @@
+@startuml
+' Use case diagram: Customer and Partner (travel agency)
+!pragma layout smetana
+left to right direction
+skinparam packageStyle rectangle
+skinparam shadowing false
+skinparam usecase {
+  BackgroundColor #EEF2F7
+  BorderColor #1F3A5F
+}
+skinparam actorBorderColor #1F3A5F
+
+actor Customer as C
+actor Partner as P
+
+rectangle "Rihla system" {
+  usecase "Sign up / log in" as UC1
+  usecase "Explore and filter tours" as UC2
+  usecase "View event page,\ncapacity and map link" as UC3
+  usecase "Book event and pay\n(VAT, currency)" as UC4
+  usecase "Download booking PDF" as UC5
+  usecase "View and cancel\nown bookings" as UC6
+  usecase "Review past experience" as UC7
+  usecase "Open support ticket" as UC8
+  usecase "Add event to\nshopping list" as UC9
+  usecase "Pay for the whole\nlist at once" as UC10
+  usecase "Report a problem\nto admin" as UC11
+  usecase "Set preferred currency" as UC12
+}
+
+C -- UC1
+C -- UC2
+C -- UC3
+C -- UC4
+C -- UC6
+C -- UC7
+C -- UC8
+C -- UC11
+C -- UC12
+
+UC1 -- P
+UC2 -- P
+UC3 -- P
+UC4 -- P
+UC6 -- P
+UC9 -- P
+UC10 -- P
+UC11 -- P
+UC12 -- P
+
+UC4 ..> UC5 : <<include>>
+UC10 ..> UC5 : <<include>>
+@enduml

@@ -506,6 +506,50 @@ para(f"Figure {next_fig()} shows the tables and how they relate. We should be ho
      "customer_email or vendor_email). This was quick to build, but it means an email cannot be changed "
      "later without touching many tables. Section 5 comes back to this.")
 uml("06_er_diagram", "Entity relationship diagram of server/users.db", width=6.4, max_height=8.0)
+
+para("", bold_lead="EER diagram", keep=True)
+para("The ER diagram above shows the tables as they are stored. To show the meaning behind them, we also "
+     "drew an Enhanced ER (EER) diagram in Chen notation. Rectangles are entities, diamonds are relationships "
+     "and ovals are attributes. A key attribute is underlined, a double oval is multi-valued, and a dashed "
+     "oval is derived, which means the code works it out instead of storing it. A double line means total "
+     "participation, so every row on that side must take part in the relationship. The numbers 1, N and M "
+     "on the lines are the cardinalities.")
+para("The most important part of the EER is the specialization of USER. In the code every account has exactly "
+     "one role, stored in the role column, so we drew a disjoint (d) and total specialization. We added one "
+     "level in between, SSN_HOLDER, because every role except Customer must give a 16-digit SSN, and only "
+     "those accounts have ssn_hash and ssn_last4. STAFF is the only role with its own extra attribute "
+     "(manager_email) and its own relationship (WORKS_AT a venue). The other roles take part in relationships "
+     "that only they are allowed to use: VENDOR owns venues and creates events, DISPATCHER registers vehicles, "
+     "PARTNER fills the shopping list and ADMIN bans users and handles reports.")
+ov = next_fig()
+para(f"A complete EER with every attribute does not fit on one page in a readable size, so we split it the "
+     f"same way a map book does. Figure {ov} is the overview with all entities and relationships and no "
+     f"attributes. Figures {ov + 1} to {ov + 5} each show one area with all of its attributes. An entity drawn "
+     "in grey is only there to show a link, and its attributes are in another part.")
+uml("06b_eer_overview", "EER overview: all entities, relationships, cardinalities and the role specialization",
+    width=6.5, max_height=8.0)
+uml("06c_eer_users", "EER part 1: users and roles, with all attributes", width=6.5)
+para(f"Figure {ov + 1}: account_age is derived from created_at on the admin page. BANS is a relationship "
+     "between an admin and any user, and banned_at belongs to the user because it describes the account.")
+uml("06d_eer_support", "EER part 2: support tickets and reports, with all attributes", width=5.6)
+para(f"Figure {ov + 2}: ASKS_ABOUT is partial, because old support tickets from before customers had to pick "
+     "an event name no event at all. CONCERNS is partial too, because the offender's email in a report is "
+     "optional.")
+uml("06e_eer_events", "EER part 3: venues and events, with all attributes", width=5.2)
+para(f"Figure {ov + 3}: recur_day is multi-valued because a repeating event can run on several weekdays, "
+     "for example Tuesday and Thursday. seats_left and average_rating are derived. Every event is hosted at a "
+     "venue and created by a vendor, so EVENT has total participation in both.")
+uml("06f_eer_bookings", "EER part 4: bookings, tickets, reviews and the partner cart, with all attributes",
+    max_height=8.0)
+para(f"Figure {ov + 4}: every booking has exactly one ticket, but the demo ticket shows that a ticket can exist "
+     "without a booking, so only the booking side is total. A review belongs to exactly one booking. "
+     "BOOKED_FOR is partial for bookings because they stay in the database after their event is deleted. "
+     "shown_status (Confirmed, Checked in, Expired or Cancelled) is derived from the booking, its ticket and "
+     "today's date.")
+uml("06g_eer_fleet", "EER part 5: vehicles and vehicle types, with all attributes", width=5.6)
+para(f"Figure {ov + 5}: ASSIGNED_TO is the only many-to-many relationship. It is stored in the event_vehicles "
+     "table, and its status (Assigned or Concluded) is an attribute of the relationship, not of the event or "
+     "the vehicle.")
 para("The tables below give enough detail to create the database again.")
 
 DB_TABLES = [
@@ -698,8 +742,8 @@ uml("05b_class_modules_server", "Class diagram, part 2: client modules, Flask se
 para(f"Figure {f1 + 1}: the screens only know api_client. The payment window uses pricing for VAT and "
      "currency and booking_pdf for the receipt. On the server side, server.py calls the two data modules.")
 f2 = next_fig()
-para(f"Figures {f2} to {f2 + 2} are the use case diagrams. We drew two roles per diagram to keep them "
-     "readable. The components in section 3.2 follow these use cases.")
+para(f"Figures {f2} to {f2 + 2} are the use case diagrams, drawn in PlantUML. We drew two roles per diagram "
+     "to keep them readable. The components in section 3.2 follow these use cases.")
 uml("01_use_case_customer_partner", "Use cases of the Customer and the Partner", width=5.0, max_height=7.0)
 para("Customers and partners share most of their use cases. The partner has two extra ones: the shopping "
      "list and paying for the whole list at once. Both paths end with the Booking Details window, where the "
@@ -707,7 +751,8 @@ para("Customers and partners share most of their use cases. The partner has two 
 uml("02_use_case_vendor_dispatcher", "Use cases of the Vendor and the Dispatcher", width=5.0, max_height=7.0)
 uml("03_use_case_staff_admin", "Use cases of the Staff and the Admin", width=5.0, max_height=6.5)
 para("The admin does not have a Report button, because admins are the ones who read reports. Banning an "
-     "account is often done straight from a report, which is why it is drawn as an extension of it.")
+     "account is often done straight from a report, which is why Ban or restore account is drawn as an "
+     "extension of Read and resolve reports.")
 
 h(2, "3.2 Description for Components")
 para("We split Rihla into nine components. Most of them follow a role (the vendor, the staff, the dispatcher, "

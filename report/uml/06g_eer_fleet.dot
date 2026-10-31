@@ -1,0 +1,42 @@
+// EER diagram of server/users.db in Chen notation.
+// Rectangles: entities. Diamonds: relationships. Ovals: attributes.
+// Underlined: key. Double oval: multi-valued. Dashed oval: derived (worked out, not stored).
+// Double line: total participation. Circle with d: disjoint, total specialization (one role per user).
+// Grey entities are shown in full in another part of the diagram.
+// Part: Fleet
+graph EER {
+  layout=dot; rankdir=LR; nodesep=0.15; ranksep=0.45; splines=true; outputorder=edgesfirst; newrank=true;
+  node [fontname="Helvetica", fontsize=16];
+  edge [fontname="Helvetica", fontsize=15, color="#2C3E50"];
+  VEHICLE [shape=box, style="filled,bold", fillcolor="#D6E4F0", fontsize=18];
+  VEHICLE__id [shape=ellipse, label=<<U>id</U>>];
+  VEHICLE -- VEHICLE__id;
+  VEHICLE__license_number [shape=ellipse, label="license_number"];
+  VEHICLE -- VEHICLE__license_number;
+  VEHICLE__location [shape=ellipse, label="location"];
+  VEHICLE -- VEHICLE__location;
+  VEHICLE__status [shape=ellipse, label="status"];
+  VEHICLE -- VEHICLE__status;
+  VEHICLE__auto_reassign_recurring [shape=ellipse, label="auto_reassign_recurring"];
+  VEHICLE -- VEHICLE__auto_reassign_recurring;
+  VEHICLE_TYPE [shape=box, style="filled,bold", fillcolor="#D6E4F0", fontsize=18];
+  VEHICLE_TYPE__id [shape=ellipse, label=<<U>id</U>>];
+  VEHICLE_TYPE -- VEHICLE_TYPE__id;
+  VEHICLE_TYPE__name [shape=ellipse, label="name"];
+  VEHICLE_TYPE -- VEHICLE_TYPE__name;
+  VEHICLE_TYPE__capacity [shape=ellipse, label="capacity"];
+  VEHICLE_TYPE -- VEHICLE_TYPE__capacity;
+  DISPATCHER [shape=box, style="filled", fillcolor="#ECEFF1", color="#7F8C8D", fontsize=18];
+  EVENT [shape=box, style="filled", fillcolor="#ECEFF1", color="#7F8C8D", fontsize=18];
+  R_REGISTERS [shape=diamond, style=filled, fillcolor="#F9E4B7", label="REGISTERS", fontsize=14];
+  R_REGISTERS -- DISPATCHER [label="1"];
+  R_REGISTERS -- VEHICLE [label="N", color="black:white:black"];
+  R_OF_TYPE [shape=diamond, style=filled, fillcolor="#F9E4B7", label="OF_TYPE", fontsize=14];
+  R_OF_TYPE -- VEHICLE_TYPE [label="1"];
+  R_OF_TYPE -- VEHICLE [label="N", color="black:white:black"];
+  R_ASSIGNED_TO [shape=diamond, style=filled, fillcolor="#F9E4B7", label="ASSIGNED_TO", fontsize=14];
+  R_ASSIGNED_TO -- EVENT [label="M"];
+  R_ASSIGNED_TO -- VEHICLE [label="N"];
+  R_ASSIGNED_TO__status [shape=ellipse, label="status"];
+  R_ASSIGNED_TO -- R_ASSIGNED_TO__status;
+}

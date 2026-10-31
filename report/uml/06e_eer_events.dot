@@ -1,0 +1,63 @@
+// EER diagram of server/users.db in Chen notation.
+// Rectangles: entities. Diamonds: relationships. Ovals: attributes.
+// Underlined: key. Double oval: multi-valued. Dashed oval: derived (worked out, not stored).
+// Double line: total participation. Circle with d: disjoint, total specialization (one role per user).
+// Grey entities are shown in full in another part of the diagram.
+// Part: Venues and events
+graph EER {
+  layout=dot; rankdir=LR; nodesep=0.15; ranksep=0.45; splines=true; outputorder=edgesfirst; newrank=true;
+  node [fontname="Helvetica", fontsize=16];
+  edge [fontname="Helvetica", fontsize=15, color="#2C3E50"];
+  VENUE [shape=box, style="filled,bold", fillcolor="#D6E4F0", fontsize=18];
+  VENUE__id [shape=ellipse, label=<<U>id</U>>];
+  VENUE -- VENUE__id;
+  VENUE__name [shape=ellipse, label="name"];
+  VENUE -- VENUE__name;
+  VENUE__address [shape=ellipse, label="address"];
+  VENUE -- VENUE__address;
+  VENUE__maps_url [shape=ellipse, label="maps_url"];
+  VENUE -- VENUE__maps_url;
+  EVENT [shape=box, style="filled,bold", fillcolor="#D6E4F0", fontsize=18];
+  EVENT__id [shape=ellipse, label=<<U>id</U>>];
+  EVENT -- EVENT__id;
+  EVENT__title [shape=ellipse, label="title"];
+  EVENT -- EVENT__title;
+  EVENT__category [shape=ellipse, label="category"];
+  EVENT -- EVENT__category;
+  EVENT__price [shape=ellipse, label="price"];
+  EVENT -- EVENT__price;
+  EVENT__description [shape=ellipse, label="description"];
+  EVENT -- EVENT__description;
+  EVENT__event_datetime [shape=ellipse, label="event_datetime"];
+  EVENT -- EVENT__event_datetime;
+  EVENT__is_recurring [shape=ellipse, label="is_recurring"];
+  EVENT -- EVENT__is_recurring;
+  EVENT__recur_day [shape=ellipse, label="recur_day", peripheries=2];
+  EVENT -- EVENT__recur_day;
+  EVENT__recur_time [shape=ellipse, label="recur_time"];
+  EVENT -- EVENT__recur_time;
+  EVENT__capacity [shape=ellipse, label="capacity"];
+  EVENT -- EVENT__capacity;
+  EVENT__seats_left [shape=ellipse, label="seats_left", style="dashed"];
+  EVENT -- EVENT__seats_left;
+  EVENT__average_rating [shape=ellipse, label="average_rating", style="dashed"];
+  EVENT -- EVENT__average_rating;
+  VENDOR_CATEGORY [shape=box, style="filled,bold", fillcolor="#D6E4F0", fontsize=18];
+  VENDOR_CATEGORY__id [shape=ellipse, label=<<U>id</U>>];
+  VENDOR_CATEGORY -- VENDOR_CATEGORY__id;
+  VENDOR_CATEGORY__name [shape=ellipse, label="name"];
+  VENDOR_CATEGORY -- VENDOR_CATEGORY__name;
+  VENDOR [shape=box, style="filled", fillcolor="#ECEFF1", color="#7F8C8D", fontsize=18];
+  R_OWNS [shape=diamond, style=filled, fillcolor="#F9E4B7", label="OWNS", fontsize=14];
+  R_OWNS -- VENDOR [label="1"];
+  R_OWNS -- VENUE [label="N", color="black:white:black"];
+  R_CREATES [shape=diamond, style=filled, fillcolor="#F9E4B7", label="CREATES", fontsize=14];
+  R_CREATES -- VENDOR [label="1"];
+  R_CREATES -- EVENT [label="N", color="black:white:black"];
+  R_DEFINES [shape=diamond, style=filled, fillcolor="#F9E4B7", label="DEFINES", fontsize=14];
+  R_DEFINES -- VENDOR [label="1"];
+  R_DEFINES -- VENDOR_CATEGORY [label="N", color="black:white:black"];
+  R_HOSTS [shape=diamond, style=filled, fillcolor="#F9E4B7", label="HOSTS", fontsize=14];
+  R_HOSTS -- VENUE [label="1"];
+  R_HOSTS -- EVENT [label="N", color="black:white:black"];
+}

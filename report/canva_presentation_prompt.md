@@ -164,7 +164,7 @@ Rihla uses a layered client and server architecture. The client only shows scree
 
 **Visual**
 - Main image: report/uml/04_component_deployment.png (Figure 1 in the report).
-- Optional second image, smaller: report/uml/05b_class_modules_server.png (Figure 4, client modules, Flask server and data modules).
+- Optional second image, smaller: report/uml/05b_class_modules_server.png (Figure 10, client modules, Flask server and data modules).
 
 **Suggested speaker:** Hamzah and Hamad
 
@@ -224,7 +224,7 @@ Rihla has six roles and each one has its own home screen and its own server rule
 The customer picks a date from a calendar that only allows valid dates, then chooses 1 to 10 guests. The payment window shows the base price, the 5% VAT line and the total in the user's preferred currency. Payment is a demo that checks fixed demo card or bank details. Only after the payment is approved does the client send the booking, and the server checks the seats again inside a BEGIN IMMEDIATE transaction and creates a 16-digit ticket code.
 
 **Visual**
-- Main image: report/uml/07_seq_booking_vat.png (Figure 31, booking sequence diagram).
+- Main image: report/uml/07_seq_booking_vat.png (Figure 37, booking sequence diagram).
 - Small screenshots next to it: report/rihla_report/screens/05_payment.png (VAT line and currency picker) and report/rihla_report/screens/06_booking_details.png (receipt window).
 - Optional small Canva chart: a stacked bar for one booking, Base 720 AED (Oasis Teal) and VAT 36 AED (Desert Sand), total 756 AED.
 
@@ -245,7 +245,7 @@ The customer picks a date from a calendar that only allows valid dates, then cho
 We use one written refund policy for everybody. A booker gets all the money back two days or more before the start, half between two days and one day, and cannot cancel in the last day. A vendor or an admin can cancel until the event starts, always with a full refund and a reason. The app shows the refund before the user confirms, and refunds are recorded only, because payments are a demo.
 
 **Visual**
-- Main image: report/uml/14_activity_refund_policy.png (Figure 17, activity diagram of the refund decision).
+- Main image: report/uml/14_activity_refund_policy.png (Figure 23, activity diagram of the refund decision).
 - Create a step chart in Canva (a column chart works too). X axis: hours before the event starts. Y axis: refund percent for a customer or partner.
 
 | Hours before start | Refund |
@@ -255,7 +255,7 @@ We use one written refund policy for everybody. A booker gets all the money back
 | under 24 | 0% (cancel refused) |
 
 - Colours: 100% in Palm Green, 50% in Desert Sand, 0% in Alert Red.
-- Optional: report/uml/08_seq_cancel_refund.png (Figure 33) or report/uml/12_state_booking.png (Figure 39).
+- Optional: report/uml/08_seq_cancel_refund.png (Figure 39) or report/uml/12_state_booking.png (Figure 45).
 
 **Suggested speaker:** Hamzah and Hamad
 
@@ -274,8 +274,8 @@ We use one written refund policy for everybody. A booker gets all the money back
 At sign-up, staff choose a venue and enter the manager's email. The server finds the staff member's venue and refuses a ticket that belongs to another venue, without giving details about it. The update to "Used" only runs when the ticket is still "Valid", so the same ticket cannot be checked in twice. The schedule and the support tickets also show only the staff member's own venue.
 
 **Visual**
-- Main image: report/uml/09_seq_staff_checkin.png (Figure 34, staff check-in sequence diagram).
-- Screenshot: report/rihla_report/screens/10_staff_operations.png (Figure 49, Venue Operations page).
+- Main image: report/uml/09_seq_staff_checkin.png (Figure 40, staff check-in sequence diagram).
+- Screenshot: report/rihla_report/screens/10_staff_operations.png (Figure 55, Venue Operations page).
 
 **Suggested speaker:** Hamzah and Hamad
 
@@ -294,8 +294,8 @@ At sign-up, staff choose a venue and enter the manager's email. The server finds
 The dispatcher assigns a combination of available vehicles to an event, and the event capacity becomes the sum of their seats. When a vehicle is freed or set to Maintenance, the capacity goes back to the vendor's number. Partners are travel agencies. They collect several events in a shopping list and pay once, and the server books every item in one transaction, so a partner never gets half a cart.
 
 **Visual**
-- Main image: report/uml/10_seq_partner_checkout.png (Figure 32) or report/uml/13_state_vehicle.png (Figure 22). Pick one as the main image and the other as a thumbnail.
-- Screenshots: report/rihla_report/screens/12_dispatch.png (Figure 51) and report/rihla_report/screens/11_partner_cart.png (Figure 50).
+- Main image: report/uml/10_seq_partner_checkout.png (Figure 38) or report/uml/13_state_vehicle.png (Figure 28). Pick one as the main image and the other as a thumbnail.
+- Screenshots: report/rihla_report/screens/12_dispatch.png (Figure 57) and report/rihla_report/screens/11_partner_cart.png (Figure 56).
 
 **Suggested speaker:** Hamzah and Hamad
 
@@ -329,7 +329,7 @@ The admin can ban any account except their own or another admin, and the server 
 | Total | 70 |
 
 - Use Oasis Teal for the bars. Do not chart the "Total" row, write "70 tests, all passed" as a big number next to the chart in Palm Green.
-- Small images: report/uml/11_seq_admin_report_ban.png (Figure 38) and report/rihla_report/screens/14_admin_reports.png (Figure 53).
+- Small images: report/uml/11_seq_admin_report_ban.png (Figure 44) and report/rihla_report/screens/14_admin_reports.png (Figure 59).
 - Put the limits in a small card with an Alert Red border.
 
 **Suggested speaker:** Oumar Ibrahim (testing), Omar Arif (limits)
