@@ -155,7 +155,7 @@ Our main goal is to give every person in the booking process a clear screen for 
 **Slide text**
 - Layered client and server design with three layers
 - Presentation: Tkinter screens in src/, one home screen per role
-- Service: Flask REST API on 127.0.0.1, port 5000
+- Application: Flask REST API on 127.0.0.1, port 5000
 - Data: database_core.py and database_events.py hold all business rules
 - The client never opens the database. The server checks everything again
 
@@ -183,7 +183,7 @@ Rihla uses a layered client and server architecture. The client only shows scree
 All data lives in one SQLite file that only the server opens. The init_db function creates the tables, upgrades older databases and adds the demo accounts and demo data. Many links use the email address instead of a numeric key, because the users table has no integer id. For privacy, we never store the raw SSN, only a salted hash and the last four digits.
 
 **Visual**
-- Main image: report/uml/06_er_diagram.png (Figure 2, entity relationship diagram).
+- Main image: report/uml/06b_eer_overview.png (Figure 3, EER overview).
 - If the diagram is too small on the slide, crop it to the bookings, events, tickets and users tables and say that the full diagram is in the report.
 
 **Suggested speaker:** Salem Al Tamimi

@@ -32,7 +32,7 @@ SLIDE 3: Scope: What We Built
 SLIDE 4: System Architecture
 - Layered client and server design with three layers
 - Presentation: Tkinter screens, one home screen per role
-- Service: Flask REST API on 127.0.0.1, port 5000
+- Application: Flask REST API on 127.0.0.1, port 5000
 - Data: two data modules hold all business rules
 - The client never opens the database. The server checks everything again
 [Image: report/uml/04_component_deployment.png]
@@ -43,7 +43,7 @@ SLIDE 5: Data Design
 - Support tables: reviews, support tickets, reports, vehicles, partner cart
 - Passwords: salted PBKDF2. SSN: only a hash and the last 4 digits
 - Bookings store the total in AED with VAT included
-[Image: report/uml/06_er_diagram.png]
+[Image: report/uml/06b_eer_overview.png]
 
 SLIDE 6: Six Roles, One Frame
 - Customer and Partner book experiences. Partners book groups
