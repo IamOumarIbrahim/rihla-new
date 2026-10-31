@@ -1,13 +1,19 @@
 """Writes the EER diagram of server/users.db (Chen notation) as Graphviz files in report/uml/.
 
-06b_eer_overview.dot  all entities, relationships, cardinalities and the role specialization (keys only)
-06c_eer_accounts.dot  users, roles, venues for staff, support tickets, reports and bans, with all attributes
-06d_eer_bookings.dot  venues, events, bookings, tickets, reviews and the partner cart, with all attributes
-06e_eer_fleet.dot     vehicles, vehicle types and their link to events, with all attributes
+06b_eer_overview.dot  all entities, relationships, cardinalities and the role specialization (no attributes)
+06c_eer_users.dot     users and roles with the specialization, with all attributes
+06d_eer_support.dot   support tickets and reports, with all attributes
+06e_eer_events.dot    venues, events and categories, with all attributes
+06f_eer_bookings.dot  bookings, tickets, reviews and the partner cart, with all attributes
+06g_eer_fleet.dot     vehicles, vehicle types and their link to events, with all attributes
+
+Render each file with Graphviz, for example:
+    node render_dot.mjs ../06c_eer_users.dot ../06c_eer_users.png dot
+(render_dot.mjs needs the npm packages @viz-js/viz and puppeteer). The overview uses the neato layout.
 """
 import os
 
-U = r"C:\Dev\repos\Public repos\rihla_manual\report\uml"
+U = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # report/uml
 
 ENT = {
     "USER": ["email:key", "password", "role", "phone", "currency", "created_at", "banned", "banned_at",
