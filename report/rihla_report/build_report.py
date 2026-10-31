@@ -655,6 +655,32 @@ para("A good example of why this matters is the seat check. The event page check
      "double booking. In Phase 1 we had planned a 15-minute seat lock instead, but the transaction turned out "
      "to be simpler and safer.")
 
+para("", bold_lead="Design decisions and alternatives", keep=True)
+para("While building Rihla we had to choose between several options more than once. The table below lists the "
+     "main choices, what we picked and why. Some of them have a price, and we come back to those in section 5.")
+table(["Decision", "What we chose", "Alternative we considered", "Why"], [
+    ["Platform", "Plain Python: Tkinter client and Flask server", "Odoo module with PostgreSQL (Phase 1 plan)",
+     "Smaller to learn and finish in one semester, and every team member knows Python."],
+    ["Where the rules live", "Only in the server's data layer", "Checks in each screen",
+     "Six roles share the same seats and bookings, so the rules must exist once."],
+    ["Stopping double booking", "Seat check inside a BEGIN IMMEDIATE transaction",
+     "A 15-minute seat lock (Phase 1 plan)", "No lock to clean up when a user leaves halfway."],
+    ["Database", "One SQLite file", "PostgreSQL or MySQL server",
+     "Nothing to install, easy to copy and reset for the demo."],
+    ["Keys for users", "Email address", "A number id per user",
+     "Quick to build, but an email can no longer be changed."],
+    ["Sign-in state", "The client remembers the email", "Session tokens",
+     "Not done in time. It is the first thing we would add."],
+    ["Money", "Stored in AED with VAT included", "Store each booking in the user's currency",
+     "One currency keeps refunds and reports simple."],
+    ["Receipt PDF", "Our own small PDF writer", "A PDF library such as ReportLab",
+     "One less library to install for a one-page receipt."],
+    ["Event capacity", "Worked out from assigned vehicles, or the vendor's number",
+     "A seats column that is updated by hand", "It can never be out of date."],
+    ["Ticket codes", "Random 16 digits, checked to be unique", "QR codes",
+     "Easy to type at the gate, and no camera is needed."],
+], "Main design decisions", widths=[1.2, 1.8, 1.8, 1.7], font=SMALL_TABLE_PT)
+
 h(2, "3.1 System Structure")
 para("The client is organised by screen and the server by data area. The welcome package in the client has "
      "one module per role and a few shared views: ReportView, VehicleView, DispatchView, the cancellation "
@@ -684,13 +710,15 @@ para("The admin does not have a Report button, because admins are the ones who r
      "account is often done straight from a report, which is why it is drawn as an extension of it.")
 
 h(2, "3.2 Description for Components")
-para("We split Rihla into seven components. Each one is described with the template headings. The "
-     "processing detail is written as a simple Start and End flow, and each operation is given with its "
-     "Python name so it can be found in the code.")
+para("We split Rihla into nine components. Most of them follow a role (the vendor, the staff, the dispatcher, "
+     "the admin), and a few follow a piece of logic that several roles share (booking, payment, cancelling). "
+     "Each component is described with the template headings. Under 3.2.3.1 we show a small class diagram "
+     "of the classes and modules that make up the component, followed by an activity diagram of its main "
+     "flow. Each operation is given with its real Python name, so it can be found in the code.")
 
 
-def component(name, pspec, interface_text, interface_rows, flow_steps, hierarchy, restrictions, performance,
-              constraints, ops, figure_after_hierarchy=None):
+def component(name, pspec, interface_text, interface_rows, flow_steps, hierarchy, class_diagram, activity,
+              restrictions, performance, constraints, ops):
     h(2, f"3.2 Description for Component “{name}”")
     h(3, "3.2.1 Processing narrative (PSPEC) for component")
     for text in pspec:
@@ -704,10 +732,15 @@ def component(name, pspec, interface_text, interface_rows, flow_steps, hierarchy
     h(3, "3.2.3 Component processing detail")
     flow(flow_steps)
     h(4, f"3.2.3.1 Design Class hierarchy for component {name}")
-    for text in hierarchy:
-        para(text)
-    if figure_after_hierarchy:
-        figure_after_hierarchy()
+    fc = next_fig()
+    para(hierarchy[0].replace("{fig}", str(fc)))
+    uml(class_diagram[0], class_diagram[1], width=class_diagram[2] if len(class_diagram) > 2 else 6.0,
+        max_height=7.0)
+    for text in hierarchy[1:]:
+        para(text.replace("{fig}", str(fc)))
+    fa = next_fig()
+    uml(activity[0], activity[1], max_height=7.6)
+    para(f"Figure {fa}: " + activity[2])
     h(4, f"3.2.3.2 Restrictions/limitations for component {name}")
     para(restrictions)
     h(4, f"3.2.3.3 Performance issues for component {name}")
@@ -736,24 +769,27 @@ def component(name, pspec, interface_text, interface_rows, flow_steps, hierarchy
 component(
     "Accounts and Sign-in",
     [
-        "This component covers everything about who the user is. It creates accounts, signs people in and "
-        "out, resets passwords and keeps each user's preferred currency. The login screen has quick buttons "
-        "for the six demo accounts, which saved us a lot of typing during testing.",
+        "This component covers everything about who the user is. It creates accounts, signs people in, "
+        "resets passwords and keeps each user's preferred currency. The login screen has quick buttons for "
+        "the six demo accounts, which made testing much faster.",
         "Sign-up has an account type picker with five roles. Admin is not one of them, so nobody can make an "
         "admin account from the app. Customers sign up with email, phone and password. Every other role must "
         "also give a 16-digit SSN, and staff must pick the venue they work at and the email of its manager. "
         "We store the SSN the same way as a password: only a salted hash, plus the last 4 digits.",
-        "Passwords are hashed with PBKDF2 and 200,000 rounds. Some very early test accounts still had plain "
-        "text passwords, so the login quietly upgrades such a password to a hash the first time it is used.",
+        "Passwords are hashed with PBKDF2 and 200,000 rounds. Some very early accounts still had plain text "
+        "passwords, so the login quietly upgrades such a password to a hash the first time it is used.",
     ],
     [
         "The login screen is the first thing every user sees. From there the user can open Create Account or "
         "Forgot Password. After a correct login the client asks the server for the role and opens the "
-        "matching home screen. A banned user gets a clear message instead.",
+        "matching home screen. A banned user gets a clear message instead. Later, every role can change the "
+        "preferred currency and the password from the Settings window, and staff can also change their venue "
+        "there.",
     ],
     [
         ["POST /api/auth/login", "email, password", "stored email and role, or 401 / 403"],
         ["POST /api/users/register", "email, password, role, phone, ssn, venue_id, manager_email", "success or the reason"],
+        ["GET /api/users/email_exists/<email>", "", "exists flag"],
         ["PUT /api/users/password", "email, new_password", "success"],
         ["GET and PUT /api/users/currency", "email, currency", "currency code"],
         ["GET and PUT /api/staff/venue", "email, venue_id, manager_email", "venue and manager"],
@@ -770,23 +806,26 @@ component(
         "User can change the currency or password from Settings and log out at any time",
     ],
     [
-        "On the client the component is made of screen functions rather than classes: show_login_screen, "
-        "show_create_account_screen, show_forgot_password_screen, show_reset_password_window and "
-        "open_social_login. The SSN is typed into DigitBoxes, a small widget we wrote that shows one box per "
-        "digit. On the server the work is done by register_user, login_status, ssn_error, staff_venue_error, "
-        "hash_password and verify_password in database_core.py.",
+        "On the client this component is made of screen functions rather than classes, so in Figure {fig} we "
+        "show each screen file as one box. The SSN is typed into DigitBoxes, a small widget we wrote that shows "
+        "one box per digit. All checks that matter are repeated on the server in database_core.",
     ],
+    ("20_class_accounts", "Class diagram of the Accounts and Sign-in component"),
+    ("30_act_signup", "Activity diagram: creating an account",
+     "the client checks the form first, so most mistakes are caught without a server call. The server then "
+     "checks the email, SSN and venue again, because the client could be bypassed."),
     "There is no session token. After login the client only remembers the email and sends it with later "
     "requests. The email and phone codes are always 000000, and the Google and Apple buttons only open an "
-    "ordinary email and password form. The password change endpoint does not ask for the old password.",
+    "ordinary email and password form. The password change endpoint does not ask for the old password, and "
+    "anyone who knows a registered email and the fixed code could reset that password.",
     "Hashing with 200,000 rounds is slow on purpose, so a login takes a moment. It happens once per login, "
     "so it does not slow down the rest of the app.",
-    "Passwords need at least 8 characters. The SSN must be exactly 16 digits and cannot be the same digit 16 "
-    "times. The phone number is a UAE mobile number with 9 digits after +971.",
+    "Passwords need at least 8 characters and cannot be words like 'password'. The SSN must be exactly 16 "
+    "digits and cannot be the same digit 16 times. The phone number is a UAE mobile number with 9 digits "
+    "after +971.",
     [
         ("+ login_status(email: str, password: str): str",
-         "is invoked when the user presses Sign In. It returns 'ok', 'invalid' or 'banned'.",
-         """
+         "is invoked when the user presses Sign In. It returns 'ok', 'invalid' or 'banned'.", """
 Start
 Find the account by email, ignoring letter case
 If there is no account or the password does not match, return 'invalid'
@@ -796,8 +835,7 @@ Return 'ok'
 End
 """),
         ("+ register_user(email, password, role, phone, ssn, venue_id, manager_email): bool",
-         "is invoked when the user presses Create Account. It saves the account only if every rule passes.",
-         """
+         "is invoked when the user presses Create Account. It saves the account only if every rule passes.", """
 Start
 If the role is not allowed at sign-up, use 'Customer'
 If the email is taken or the SSN is wrong for this role, return false
@@ -807,14 +845,52 @@ Return true
 End
 """),
         ("+ ssn_error(role: str, ssn: str): str or None",
-         "is invoked by sign-up on both the client and the server. It returns the message to show, or "
-         "nothing when the SSN is fine.",
+         "is invoked by sign-up on the server. It returns the message to show, or nothing when the SSN is fine.",
          """
 Start
 If the role is Customer, return nothing
 Remove spaces and dashes
 If the SSN is empty, not 16 digits, or one digit repeated, return the message
 Return nothing
+End
+"""),
+        ("+ staff_venue_error(venue_id, manager_email): str or None",
+         "is invoked at staff sign-up and when staff change their venue in Settings.", """
+Start
+If no venue was chosen or it does not exist, return the message
+If the manager email is empty or not an email address, return the message
+Return nothing
+End
+"""),
+        ("+ hash_password(password: str): str",
+         "is invoked whenever a password or an SSN is stored.", """
+Start
+Make a random 16-byte salt
+Run PBKDF2-SHA256 with 200,000 rounds
+Return 'pbkdf2$200000$salt$hash'
+End
+"""),
+        ("+ verify_password(password: str, stored: str): bool",
+         "is invoked by login_status.", """
+Start
+If the stored text is an old plain password, compare it safely
+Else split it into rounds, salt and hash and hash the typed password the same way
+Return true if both hashes match
+End
+"""),
+        ("+ update_password(email: str, new_password: str): None",
+         "is invoked by the reset window and by Settings.", """
+Start
+Hash the new password
+Save it for the account with that email
+End
+"""),
+        ("+ set_currency(email: str, currency: str): bool",
+         "is invoked when the user saves a preferred currency in Settings.", """
+Start
+If the currency is not AED, USD, EUR or GBP, return false
+Save it for the account
+Return true
 End
 """),
     ],
@@ -835,12 +911,15 @@ component(
     [
         "The vendor works from the pages My Events, Bookings, Manage Venues, Manage Categories and Add New "
         "Event. One form is used both for adding and for editing an event. Pictures are picked with the "
-        "normal file dialog and sent with the rest of the form.",
+        "normal file dialog and sent with the rest of the form. The Bookings page is a table of every booking "
+        "on the vendor's events, and its columns can be filtered.",
     ],
     [
-        ["GET /api/events", "", "all events"],
+        ["GET /api/events, /api/events/vendor/<email>", "", "events"],
         ["POST /api/events", "event fields, picture (base64)", "success (vendors only)"],
         ["PUT and DELETE /api/events/<id>", "event fields, or nothing", "success"],
+        ["GET /api/events/<id>/image", "", "JPEG or 404"],
+        ["GET /api/bookings/vendor/<email>", "", "bookings on the vendor's events"],
         ["POST /api/venues, DELETE /api/venues/<id>", "name, address, maps_url", "success or 'in use'"],
         ["PUT /api/venues/<id>/maps_url", "vendor_email, maps_url", "cleaned link or error"],
         ["GET, POST, DELETE /api/vendor_categories", "vendor_email, name", "categories"],
@@ -854,10 +933,14 @@ component(
         "The updated event appears for customers and partners",
     ],
     [
-        "VendorWelcomeScreen builds all five pages, with open_event_form for both adding and editing. "
-        "event_images.py loads, shrinks and shows pictures. On the server the work is in create_event, "
-        "update_event, delete_event, create_venue, delete_venue, validate_maps_url and update_venue_maps_url.",
+        "VendorWelcomeScreen builds all five pages, with open_event_form used for both adding and editing "
+        "(Figure {fig}). The event_images module loads, shrinks and shows pictures, and CoverImage is the "
+        "widget that scales a picture to fill a card.",
     ],
+    ("21_class_events", "Class diagram of the Events and Venues component", 5.6),
+    ("31_act_event", "Activity diagram: a vendor saves an event",
+     "the picture is shrunk on the client before it is sent, and the server checks it again. Renaming an "
+     "event also renames it inside old bookings and tickets, so customers never see an old title."),
     "Updating or deleting an event and deleting a venue do not check that the caller owns it. The client only "
     "shows a vendor their own records, but the server does not enforce it yet. Prices are saved as text and "
     "only the digits are read, so a price like 99.50 is not possible.",
@@ -866,9 +949,24 @@ component(
     "Capacity must be between 1 and 5000. Pictures must be JPEG. A venue cannot be deleted while events use it "
     "or staff work there. Map links must be https links to Google Maps.",
     [
+        ("+ create_event(title, category, price, description, vendor_email, venue_id, event_datetime, "
+         "is_recurring, recur_day, recur_time, capacity): None",
+         "is invoked when the vendor saves a new event.", """
+Start
+Check the capacity (empty means 20, otherwise 1 to 5000)
+Save the event
+End
+"""),
+        ("+ update_event(event_id, title, ..., capacity): None",
+         "is invoked when the vendor saves an edited event.", """
+Start
+If a capacity was sent, check and save it
+Save the other fields
+Copy the new title into the event's bookings and tickets
+End
+"""),
         ("+ delete_event(event_id: int): None",
-         "is invoked when the vendor presses Delete on an event card and confirms.",
-         """
+         "is invoked when the vendor presses Delete on an event card and confirms.", """
 Start
 Set the event's assigned vehicles back to Available
 Remove the event's vehicle assignments
@@ -877,10 +975,23 @@ Cancel their tickets
 Delete the event
 End
 """),
+        ("+ create_venue(name, address, vendor_email, maps_url): None",
+         "is invoked from Manage Venues after the map link was checked.", """
+Start
+Save the venue with its owner and map link
+End
+"""),
+        ("+ delete_venue(venue_id: int): bool",
+         "is invoked from Manage Venues.", """
+Start
+If an event uses the venue or a staff member works there, return false
+Delete the venue
+Return true
+End
+"""),
         ("+ validate_maps_url(url: str): (str, str or None)",
          "is invoked when a venue is created or its map link is changed. It returns the cleaned link or a "
-         "message.",
-         """
+         "message.", """
 Start
 If the link is empty, accept it
 If it is too long or has spaces, refuse it
@@ -888,37 +999,31 @@ Add https:// when needed
 If the host is a Google Maps address, accept it, otherwise refuse it
 End
 """),
+        ("+ add_vendor_category(vendor_email: str, name: str): bool",
+         "is invoked from Manage Categories.", """
+Start
+If the vendor already has a category with this name (any letter case), return false
+Save the category
+Return true
+End
+"""),
     ],
 )
 
 # --- Component 3 ------------------------------------------------------------
-def booking_figures():
-    f = next_fig()
-    para(f"The booking flow is the heart of Rihla, so we show it as a sequence diagram here (Figure {f}) and "
-         f"the partner's cart checkout in Figure {f + 1}.")
-    uml("07_seq_booking_vat", "Sequence diagram: a customer books an event and pays", max_height=7.5)
-    para(f"Figure {f}: the capacity is read first for the chosen date. The payment window adds VAT and shows "
-         "the chosen currency. Only after the demo payment is approved does the client send the booking, and "
-         "the server checks the seats again inside its transaction before it creates the ticket.")
-    uml("10_seq_partner_checkout", "Sequence diagram: a partner pays for the whole shopping list",
-        max_height=7.5)
-    para(f"Figure {f + 1}: every item in the cart is booked inside one transaction. If one of them fails, for "
-         "example because the event filled up in the meantime, nothing is booked and the cart stays as it was.")
-
-
 component(
-    "Booking and Payment",
+    "Booking and Shopping List",
     [
-        "This component turns a choice of event, date and guests into a paid booking with a ticket. It is "
-        "used by customers and partners.",
+        "This component turns a choice of event, date and guests into a booking with a ticket. It is used by "
+        "customers and partners.",
         "The event page shows a calendar where only the allowed dates can be picked, a capacity bar such as "
-        "'12 of 30 remaining' (with 'Hurry up!' when it is almost full) and the total price. The payment "
-        "window shows the base price, the 5% VAT and the total in the currency the user picks. Visa, "
-        "Mastercard and bank transfer are offered, already filled in with demo details. When the payment is "
-        "approved, the server saves the booking and a new 16-digit ticket, and the Booking Details window "
-        "shows everything with a Download PDF button.",
+        "'12 of 30 remaining' (with 'Hurry up!' when it is almost full) and the total price. When the payment "
+        "is approved, the server checks the seats once more, saves the booking and creates a new 16-digit "
+        "ticket code that is not used by any other ticket.",
         "Partners work a little differently. They have no limit of 10 guests per booking, they can type a "
-        "client name, and they can collect several events in a shopping list and pay for all of them at once.",
+        "client name for the group, and they can collect several events in a shopping list and pay for all of "
+        "them at once. A customer may also book the same event more than once, for example for two groups of "
+        "friends.",
     ],
     [
         "The customer starts from Explore Tours and opens an event with View Details. The partner has the same "
@@ -930,29 +1035,29 @@ component(
         ["POST /api/bookings", "email, event_id, booking_date, guests, client_name", "booking with base, VAT, total, ticket code"],
         ["GET /api/bookings/customer/<email>", "", "bookings with status and refund info"],
         ["POST /api/cart, GET /api/cart/<email>", "partner_email, event_id, date, guests, client_name", "cart items"],
+        ["POST /api/cart/<id>/remove, .../clear", "partner_email", "success"],
         ["POST /api/cart/<email>/checkout", "", "all bookings, or none"],
     ],
     [
         "User opens an event and picks a date and the number of guests",
         "System shows the seats left on that date and the price",
-        "User presses Proceed to Booking (or Add to List and later Pay, for partners)",
-        "System shows the payment window with base price, VAT and total in the chosen currency",
-        "User pays with the demo details",
+        "User presses Proceed to Booking (or Add to List, for partners)",
+        "User pays in the payment window (see the next component)",
         "System checks the seats again, saves the booking and creates a ticket code",
-        "User sees the Booking Details window and can download the PDF",
+        "User sees the Booking Details window and the booking in their list",
     ],
     [
-        "The event page is show_event_screen in screens/event_screen.py. CustomerWelcomeScreen and "
-        "PartnerWelcomeScreen list the events and bookings. payment.py holds the payment window, the demo "
-        "check and the Booking Details window, pricing.py does the VAT and currency maths and booking_pdf.py "
-        "writes the PDF without any extra library. On the server the main functions are create_booking, "
-        "_book, _capacity_info, add_vat, _new_ticket_code, add_to_cart and checkout_cart.",
+        "Figure {fig} shows the classes. CustomerWelcomeScreen and PartnerWelcomeScreen list the events and "
+        "the bookings, and both open the same event page. The event page holds a CapacityBar and calls the "
+        "payment window. On the server the work is done by create_booking and _book.",
     ],
-    "The payment is a demo. It only checks that the form still has the fixed demo card or bank details, so "
-    "changing a digit makes it fail on purpose. Currency rates are fixed numbers and everything is charged in "
-    "AED. Also, the payment is approved on the client before the server saves the booking. If the booking "
-    "fails at that point, the Booking Details window says NOT CONFIRMED and asks the user to contact support. "
-    "With a real payment provider this order would have to change.",
+    ("22_class_booking", "Class diagram of the Booking and Shopping List component", 5.6),
+    ("32_act_booking", "Activity diagram: booking an event",
+     "the seats are checked twice, once on the client for a quick answer and once on the server inside the "
+     "transaction. Only the second check counts."),
+    "The payment is approved on the client before the server saves the booking. If the booking fails at that "
+    "point, the Booking Details window says NOT CONFIRMED and asks the user to contact support. With a real "
+    "payment provider this order would have to change.",
     "A booking is one short write. BEGIN IMMEDIATE takes the database write lock at the start, so two people "
     "booking the last seats at the same time are handled one after the other instead of both getting them.",
     "The date must be today or later and must fit the event: the right weekday for a repeating event or the "
@@ -960,7 +1065,8 @@ component(
     "on that date.",
     [
         ("+ create_booking(email, event_id, booking_date, guests, is_partner, client_name): dict",
-         "is invoked after the demo payment is approved. It opens a transaction and calls _book.", """
+         "is invoked after the demo payment is approved. It opens a transaction and calls _book. The server "
+         "decides is_partner from the account's role, not from what the client sends.", """
 Start
 Open a write transaction
 Call _book with the request
@@ -981,6 +1087,13 @@ Save the ticket as Valid and the booking as Confirmed with the total
 Return the booking with base, VAT and total
 End
 """),
+        ("- _event_allows_date(is_recurring, recur_day, event_datetime, day): bool",
+         "is invoked by _book and add_to_cart.", """
+Start
+If the event repeats, return true when the weekday of the day is in its list
+Else return true only when the day is the event's own date
+End
+"""),
         ("- _capacity_info(conn, event_id, day): dict",
          "is invoked whenever seats are needed: on the event page, when booking and when adding to the cart.",
          """
@@ -989,6 +1102,23 @@ If the event has assigned vehicles, total = sum of their seats
 Else total = the event's own capacity
 Booked = guests of confirmed bookings on that day
 Remaining = total - booked (never below 0)
+End
+"""),
+        ("- _new_ticket_code(conn): str",
+         "is invoked by _book.", """
+Start
+Repeat
+   Make a random 16-digit number that does not start with 0
+Until no ticket has this code
+Return it
+End
+"""),
+        ("+ add_to_cart(partner_email, event_id, booking_date, guests, client_name): dict",
+         "is invoked by Add to List on the event page.", """
+Start
+Check date, guests and that the event runs on that day
+If there are not enough seats now, refuse
+Save the item in the partner's cart
 End
 """),
         ("+ checkout_cart(partner_email: str): dict",
@@ -1001,22 +1131,118 @@ If one item fails, undo everything and refuse
 Empty the cart and return all bookings
 End
 """),
+        ("+ get_bookings_by_customer(email: str): list",
+         "is invoked by My Bookings and Partner Bookings.", """
+Start
+Read the user's bookings with their ticket status
+For each one work out the shown status and the refund if cancelled now
+Return the list
+End
+"""),
     ],
-    figure_after_hierarchy=booking_figures,
 )
 
 # --- Component 4 ------------------------------------------------------------
-def cancel_figures():
-    f = next_fig()
-    para(f"Figure {f} shows a customer cancelling, and Figure {f + 1} shows the refund decision as an activity "
-         "diagram.")
-    uml("08_seq_cancel_refund", "Sequence diagram: a booker cancels and gets a refund", max_height=7.5)
-    uml("14_activity_refund_policy", "Activity diagram of the refund decision", max_height=7.8)
-    para(f"Figure {f + 1}: the same function handles customers, partners, vendors and admins. The only "
-         "differences are who is allowed to cancel the booking and whether the refund follows the hours left "
-         "or is always 100%.")
+component(
+    "Pricing, Payment and Receipts",
+    [
+        "This component handles money on the client side. It works out VAT, shows prices in the user's "
+        "currency, runs the demo payment and builds the receipt.",
+        "Every price in the database is in AED. The 5% VAT is added on top of the base price, rounded to two "
+        "decimals and shown as its own line. USD, EUR and GBP are only for display, using fixed rates. The user "
+        "can switch the currency inside the payment window, and the default is the preferred currency saved in "
+        "Settings.",
+        "The receipt is built once as a list of lines and used twice: for the Booking Details window and for "
+        "the PDF. We wrote the PDF writer ourselves in booking_pdf.py, with plain PDF objects and the built-in "
+        "Helvetica font, so the app does not need an extra library for it.",
+    ],
+    [
+        "The payment window opens on top of the event page or the shopping list. It shows the order summary, "
+        "a currency box, base price, VAT and total, and three payment methods (Visa, Mastercard and bank "
+        "transfer) that are already filled in with demo details. After payment, the Booking Details window "
+        "shows the transaction id, method, currency, event details, ticket codes and prices, with Download "
+        "PDF and Close. This component does not call the server itself. It hands the result back to the "
+        "booking component.",
+    ],
+    [],
+    [
+        "Payment window opens with the base price in AED",
+        "System adds VAT and shows the prices in the preferred currency",
+        "User may change the currency and the payment method",
+        "User presses Pay",
+        "System compares the form with the demo details",
+        "If they match, the booking is saved and the Booking Details window opens",
+        "User may download the receipt as a PDF",
+    ],
+    [
+        "payment, pricing and booking_pdf are plain modules, not classes (Figure {fig}). This kept them easy to "
+        "test: the tests call verify_demo_payment directly with a correct and an edited card.",
+    ],
+    ("23_class_payment", "Class diagram of the Pricing, Payment and Receipts component", 5.2),
+    ("33_act_payment", "Activity diagram: the payment window and the receipt",
+     "a declined payment stays inside the payment window with a message about the field that does not "
+     "match, so the user can fix it without starting again."),
+    "The payment is a demo. It only checks that the form still has the fixed demo card or bank details, so "
+    "changing a digit makes it fail on purpose. Currency rates are fixed numbers and everything is charged in "
+    "AED. The PDF uses a basic font, so characters outside Latin-1 are replaced.",
+    "All of this runs on the client and takes no time. Building the PDF only writes a few kilobytes.",
+    "VAT is always 5% and always shown. The PDF is saved in the Downloads folder and never overwrites an old "
+    "receipt.",
+    [
+        ("+ vat_breakdown(base_aed: float): (float, float, float)",
+         "is invoked by the payment window and the receipt.", """
+Start
+Base = base rounded to 2 decimals
+VAT = base x 0.05 rounded to 2 decimals
+Return base, VAT and base + VAT
+End
+"""),
+        ("+ format_money(amount_aed: float, currency: str): str",
+         "is invoked wherever a price is shown.", """
+Start
+If the currency is unknown, use AED
+Multiply by the fixed rate and round to 2 decimals
+Return the number with thousands separators and the currency code
+End
+"""),
+        ("+ verify_demo_payment(method: str, details: dict): (bool, str)",
+         "is invoked when the user presses Pay.", """
+Start
+If the method is a card, compare number, cardholder, expiry and CVV with the demo card
+If the method is bank transfer, compare bank name, account name, IBAN and SWIFT
+Return false with the first field that does not match, or true
+End
+"""),
+        ("+ show_demo_payment_modal(parent, title, items, total_amount, on_success, email): None",
+         "is invoked by the event page and the shopping list.", """
+Start
+Work out base, VAT and total
+Show summary, currency box and the form of the chosen method
+On Pay, verify the details
+If accepted, create a transaction id and call on_success
+End
+"""),
+        ("+ show_booking_details_window(parent, entries, payment, payer_email, error, on_close): window",
+         "is invoked after the booking was saved, or failed.", """
+Start
+Build the receipt lines
+Show them with a green header (or red when the booking failed)
+On Download PDF, save the PDF and show where it was saved
+End
+"""),
+        ("+ save_pdf(lines: list, filename: str): str",
+         "is invoked by Download PDF.", """
+Start
+Find the Downloads folder (registry on Windows, otherwise home)
+If the file name exists, add (1), (2) and so on
+Write the PDF built by build_pdf
+Return the full path
+End
+"""),
+    ],
+)
 
-
+# --- Component 5 ------------------------------------------------------------
 component(
     "Cancellations and Refunds",
     [
@@ -1032,12 +1258,14 @@ component(
     [
         "Customers cancel from My Bookings and partners from Partner Bookings. Each card already shows what "
         "the refund would be, so there are no surprises. Vendors and admins select a row in their bookings "
-        "table and press Cancel, and a small window asks for the reason.",
+        "table and press Cancel, and a small window asks for the reason. Cancelled bookings then show who "
+        "cancelled them, why and how much was refunded.",
     ],
     [
         ["POST /api/bookings/<id>/cancel", "customer_email", "refund percent, base, VAT, total"],
         ["POST /api/bookings/<id>/vendor_cancel", "vendor_email, reason", "refund (vendors only)"],
         ["POST /api/admin/bookings/<id>/cancel", "admin_email, reason", "refund (admins only)"],
+        ["GET /api/admin/bookings?admin_email=", "", "every booking"],
     ],
     [
         "User presses Cancel on a booking",
@@ -1049,19 +1277,44 @@ component(
         "User sees the refund amount and the seats become free",
     ],
     [
-        "The client part is small: cancellation.py has the policy text, the confirm dialog and the reason "
-        "dialog, and pricing.refund_breakdown shows the numbers. On the server, cancel_booking, "
+        "The client part is small (Figure {fig}). cancellation.py has the policy text, the confirm dialog and "
+        "the reason dialog, and four different screens use it. On the server, cancel_booking, "
         "vendor_cancel_booking and admin_cancel_booking all call one shared function, _cancel, and only pass "
         "a different owner check.",
     ],
+    ("24_class_cancel", "Class diagram of the Cancellations and Refunds component"),
+    ("14_activity_refund_policy", "Activity diagram: the refund decision in _cancel()",
+     "the same function handles customers, partners, vendors and admins. The only differences are who is "
+     "allowed to cancel the booking and whether the refund follows the hours left or is always 100%."),
     "Refunds are written to the database only. No money moves, because the payments are a demo too. A booking "
     "with no time saved counts from midnight of its date.",
     "Each cancellation is one short transaction, the same as a booking.",
     "A checked-in ticket cannot be cancelled, and nobody can cancel after the event has started. The reason "
     "can be at most 300 characters.",
     [
+        ("+ cancel_booking(booking_id: int, customer_email: str, reason: str): dict",
+         "is invoked when a customer or partner cancels their own booking.", """
+Start
+Owner check: the booking's email must be the caller's email
+Call _cancel as a booker (refund from the hours left)
+End
+"""),
+        ("+ vendor_cancel_booking(booking_id: int, vendor_email: str, reason: str): dict",
+         "is invoked from the vendor's Bookings table.", """
+Start
+Owner check: the booking's event must belong to the vendor
+Call _cancel as an operator (100%, reason required)
+End
+"""),
+        ("+ admin_cancel_booking(booking_id: int, admin_email: str, reason: str): dict",
+         "is invoked from the admin's Bookings page.", """
+Start
+If the caller is not an active admin, refuse
+Call _cancel as an operator with no owner check
+End
+"""),
         ("- _cancel(booking_id, actor_email, actor_role, reason, owner_check, by_operator): dict",
-         "is invoked by all three cancel endpoints.", """
+         "is invoked by all three functions above.", """
 Start
 If a vendor or admin gives no reason, refuse
 Open a write transaction and read the booking
@@ -1084,18 +1337,18 @@ If 24 or more, return 50
 Return none
 End
 """),
+        ("+ split_refund(total_price: float, percent: int): (float, float, float)",
+         "is invoked by _cancel.", """
+Start
+Refund = total x percent / 100, rounded
+Base = refund / 1.05, rounded
+VAT = refund - base
+End
+"""),
     ],
-    figure_after_hierarchy=cancel_figures,
 )
 
-# --- Component 5 ------------------------------------------------------------
-def staff_figures():
-    f = next_fig()
-    uml("09_seq_staff_checkin", "Sequence diagram: staff check a ticket in", max_height=7.0)
-    para(f"Figure {f}: the server finds the staff member's venue itself, from the email, so the client cannot "
-         "choose another venue. A ticket for a different venue is refused without saying anything else about it.")
-
-
+# --- Component 6 ------------------------------------------------------------
 component(
     "Venue Operations",
     [
@@ -1103,17 +1356,19 @@ component(
         "sign-up and changeable in Settings. The Venue Operations page shows that venue, its manager's email, "
         "a check-in card and today's schedule for the venue with the number of bookings, guests and guests "
         "already checked in.",
-        "We added the venue rule late in the project, after we noticed that any staff member could check in "
-        "any ticket in the city. Now the server refuses a ticket for an event at another venue, the schedule "
-        "only lists the staff member's own venue, and the Support Tickets page only shows questions about "
-        "events there. Old support tickets from before customers had to pick an event are shown to all staff.",
+        "We added the venue rule late in the project. Before it, any staff member could check in any ticket "
+        "in the system. Now the server refuses a ticket for an event at another venue, the schedule only lists "
+        "the staff member's own venue, and the Support Tickets page only shows questions about events there. "
+        "Old support tickets from before customers had to pick an event are shown to all staff.",
     ],
     [
         "Staff type the 16-digit code into one box per digit and press Validate. The answer appears under the "
-        "boxes, for example 'Access granted! Ticket valid for ...' followed by how many guests to admit.",
+        "boxes, for example 'Access granted! Ticket valid for ...' followed by how many guests to admit. If "
+        "the booking is for another day, the message says so.",
     ],
     [
         ["POST /api/tickets/verify", "staff_email, ticket_code", "access granted or the reason"],
+        ["GET /api/staff/venue/<email>", "", "venue and manager"],
         ["GET /api/events/today?staff_email=", "", "today's events at the venue"],
         ["GET /api/support/open?staff_email=", "", "open questions for the venue"],
         ["POST /api/support/<id>/resolve", "staff_email", "resolved or refused"],
@@ -1127,34 +1382,73 @@ component(
         "Staff member can open Support Tickets and mark questions as resolved",
     ],
     [
-        "StaffWelcomeScreen builds both pages (build_operations_content, build_checkin_card, "
-        "render_today_schedule and build_support_content) and reuses DigitBoxes for the code. On the server, "
-        "staff_verify_ticket finds the venue and calls verify_ticket_code, while get_staff_schedule and "
-        "get_staff_support_tickets apply the same venue filter.",
+        "StaffWelcomeScreen builds both pages and reuses DigitBoxes for the code (Figure {fig}). The venue "
+        "settings live in BaseWelcomeScreen, because the Settings window is shared by every role, and only "
+        "staff see the venue part of it.",
     ],
+    ("25_class_staff", "Class diagram of the Venue Operations component", 5.2),
+    ("34_act_checkin", "Activity diagram: checking a ticket in at the venue",
+     "every refusal sends the staff member back to the code boxes, so a queue of guests can be handled one "
+     "after the other on the same screen."),
     "Codes are typed by hand. There is no QR scanner, and the schedule only covers today.",
     "The schedule runs two small queries per event of the venue. One venue only has a few events a day, so "
     "this is not a problem.",
     "The update to Used only happens if the ticket is still Valid, so two staff members can never admit the "
     "same ticket, even at the same second.",
     [
-        ("+ staff_verify_ticket(staff_email: str, ticket_code: str): dict",
+        ("+ staff_verify_ticket(staff_email: str, ticket_code: str, expected_event_title): dict",
          "is invoked when staff press Validate.", """
 Start
 Find the venue of this staff member (not banned)
 If there is none, refuse
+Call verify_ticket_code with that venue
+End
+"""),
+        ("+ verify_ticket_code(ticket_code: str, expected_event_title, venue_id): dict",
+         "is invoked by staff_verify_ticket.", """
+Start
 Find the ticket, refuse if it does not exist
 If the ticket's event is at another venue, refuse
+If it is for another event than expected, refuse
 If the ticket is Cancelled or Used, refuse
 Mark the ticket Used if it is still Valid
 Return 'Access granted' with the number of guests
 End
 """),
+        ("- _ticket_venue_id(conn, ticket_code, event_title): int",
+         "is invoked by verify_ticket_code.", """
+Start
+Find the venue through the ticket's booking and event
+If there is no booking, use the first event with that title
+End
+"""),
+        ("+ get_staff_venue(email: str): dict or None",
+         "is invoked by the page header, check-in and the schedule.", """
+Start
+Find the account with role Staff that is not banned
+Return its venue with name, address, map link and manager email
+End
+"""),
+        ("+ get_events_today(venue_id: int): list",
+         "is invoked through get_staff_schedule when the page opens or Refresh is pressed.", """
+Start
+For each event at the venue
+   Keep it if it runs today (weekday or date)
+   Count today's bookings, guests and checked-in guests
+Return the list
+End
+"""),
+        ("+ staff_resolve_support_ticket(ticket_id: int, staff_email: str): bool",
+         "is invoked by Resolve on the Support Tickets page.", """
+Start
+Find the staff member's venue
+Mark the ticket Resolved only if it is open and about that venue
+End
+"""),
     ],
-    figure_after_hierarchy=staff_figures,
 )
 
-# --- Component 6 ------------------------------------------------------------
+# --- Component 7 ------------------------------------------------------------
 component(
     "Fleet and Dispatch",
     [
@@ -1166,10 +1460,11 @@ component(
     ],
     [
         "The dispatcher has three pages: Register Vehicles, Fleet Maintenance (a table with filters on the "
-        "columns) and Event Dispatch, where they pick an event, filter the available vehicles by type and "
-        "location, and assign the ones they tick.",
+        "columns and check boxes to act on several vehicles) and Event Dispatch, where they pick an event, "
+        "filter the available vehicles by type and location, and assign the ones they tick.",
     ],
     [
+        ["GET /api/vehicle_types", "", "types with seats"],
         ["GET /api/vehicles/<dispatcher_email>", "", "the dispatcher's vehicles"],
         ["POST /api/vehicles, DELETE /api/vehicles/<id>", "license_number, vehicle_type, location", "success"],
         ["PUT /api/vehicles/<id>/status, POST .../free", "status", "success"],
@@ -1185,18 +1480,27 @@ component(
         "Later the dispatcher frees a vehicle or sets it to Maintenance, which ends the assignment",
     ],
     [
-        "DispatcherWelcomeScreen is built from two helper views: VehicleView for registering and maintenance "
-        "and DispatchView for assigning. Both use our shared table style. On the server the functions are "
-        "create_vehicle, update_vehicle_status, free_vehicle, dispatch_vehicle_combination and "
-        "get_dispatches_by_event.",
+        "DispatcherWelcomeScreen is the only home screen that is built from two helper views, VehicleView and "
+        "DispatchView, because its pages are large (Figure {fig}). Both use our shared table style.",
     ],
+    ("26_class_fleet", "Class diagram of the Fleet and Dispatch component", 5.6),
+    ("35_act_dispatch", "Activity diagram: assigning vehicles to an event",
+     "the capacity is never stored separately. It is worked out from the assigned vehicles every time, so it "
+     "can never be out of date."),
     "This is the weakest part of the server when it comes to security. The vehicle and dispatch endpoints do "
     "not check the caller's role or that the vehicle belongs to them. A vehicle is given to an event as a "
     "whole, not to one date. The auto_reassign_recurring flag is saved and shown, but nothing uses it yet.",
     "Seats are worked out with one grouped query, so it stays quick with a large fleet.",
     "Only vehicles that are Available can be assigned. The update has this condition in it, so the same "
-    "vehicle can never be assigned twice.",
+    "vehicle can never be assigned twice. License numbers are unique.",
     [
+        ("+ create_vehicle(license_number, vehicle_type, location, dispatcher_email, auto_reassign_recurring): None",
+         "is invoked from Register Vehicles.", """
+Start
+Save the vehicle as Available for this dispatcher
+If the license number exists, the database refuses it
+End
+"""),
         ("+ dispatch_vehicle_combination(event_id: int, assignments: list): int",
          "is invoked when the dispatcher presses Assign. It returns how many vehicles were really assigned.",
          """
@@ -1208,10 +1512,30 @@ Return the count
 End
 """),
         ("+ update_vehicle_status(vehicle_id: int, status: str): None",
-         "is invoked by Set Maintenance, Set Available and Free.", """
+         "is invoked by Set Maintenance and Set Available.", """
 Start
 If the new status is not Assigned, end the vehicle's event assignment
 Save the new status
+End
+"""),
+        ("+ free_vehicle(vehicle_id: int): None",
+         "is invoked from Event Dispatch.", """
+Start
+Call update_vehicle_status with Available
+End
+"""),
+        ("+ delete_vehicle(vehicle_id: int): None",
+         "is invoked from Fleet Maintenance.", """
+Start
+Remove the vehicle's assignments
+Delete the vehicle
+End
+"""),
+        ("+ get_all_vehicles(dispatcher_email: str): list",
+         "is invoked by Fleet Maintenance and Event Dispatch.", """
+Start
+Read the dispatcher's vehicles with the seats of their type
+If a type is unknown, count 4 seats
 End
 """),
     ],
@@ -1220,16 +1544,9 @@ f = next_fig()
 para(f"The life of a vehicle is short enough to show in one state diagram (Figure {f}).")
 uml("13_state_vehicle", "State diagram of a vehicle", width=4.0)
 
-# --- Component 7 ------------------------------------------------------------
-def admin_figures():
-    f = next_fig()
-    uml("11_seq_admin_report_ban", "Sequence diagram: a report leads to a ban", max_height=7.0)
-    para(f"Figure {f}: after the ban the user cannot log in, and every request that changes data is refused "
-         "by the _blocked guard in server.py.")
-
-
+# --- Component 8 ------------------------------------------------------------
 component(
-    "Administration, Reports and Reviews",
+    "Administration and Reports",
     [
         "The admin keeps the platform clean. The User Accounts page lists every account with its role, sign-up "
         "date, how old the account is and whether it is banned. For staff it also shows the venue and the "
@@ -1237,22 +1554,22 @@ component(
         "admin.",
         "Every other role has a Report button at the bottom of the side menu. The report form changes with the "
         "role, so a customer sees choices like 'Safety concern' while a dispatcher sees 'Vehicle misuse or "
-        "damage'. Reports reach the admin's inbox, oldest first, where the admin can resolve them or ban the "
-        "offender in one step.",
-        "We put reviews in this component too, because they are also about trust. A customer can rate a past "
-        "experience from 0 to 5 in half steps, and the explore page shows the average for each event.",
+        "damage'. Reports reach the admin's inbox, open ones first and the oldest at the top, where the admin "
+        "can resolve them or ban the offender in one step.",
+        "Bans are enforced by the server, not by hiding buttons. A banned user cannot log in, and every request "
+        "that changes data passes through a guard called _blocked, which refuses unknown and banned accounts.",
     ],
     [
-        "The admin's home screen has User Accounts, Reports and Bookings. The Bookings page lists every booking "
-        "in the system and lets the admin cancel any of them with a reason. Customers find their past trips "
-        "under My Experiences.",
+        "The admin's home screen has User Accounts, Reports and Bookings. The User Accounts page starts with a "
+        "small table that counts accounts per role, and the main table can be filtered by column. The "
+        "Bookings page lists every booking in the system and lets the admin cancel any of them with a reason.",
     ],
     [
         ["GET /api/admin/users?admin_email=", "", "all accounts"],
         ["POST /api/admin/users/ban", "admin_email, email, banned", "success or reason"],
         ["POST /api/reports", "reporter, category, offender, summary, details", "report id"],
-        ["GET /api/admin/reports, POST .../resolve", "admin_email, resolution", "reports, success"],
-        ["POST /api/reviews, GET /api/events/ratings", "booking_id, rating, comment", "thanks, averages"],
+        ["GET /api/admin/reports?admin_email=", "", "reports, open first"],
+        ["POST /api/admin/reports/<id>/resolve", "admin_email, resolution", "success"],
     ],
     [
         "User presses Report and fills in the form",
@@ -1263,15 +1580,46 @@ component(
     ],
     [
         "AdminWelcomeScreen builds the three admin pages, and ReportView builds the report form from a table "
-        "of choices per role (REPORT_OPTIONS). On the server we use is_admin, active_role, get_all_users, "
-        "set_user_banned, create_report, get_reports, resolve_report and submit_review.",
+        "of choices per role called REPORT_OPTIONS (Figure {fig}). The guard _blocked sits in server.py and "
+        "uses active_role from database_core.",
     ],
+    ("27_class_admin", "Class diagram of the Administration and Reports component", 5.2),
+    ("36_act_report", "Activity diagram: from a report to a ban",
+     "banning from a report also resolves the report, so the admin does not have to do two steps."),
     "Admin requests carry the admin's email. The server checks that this email belongs to an active admin, but "
     "without tokens it cannot prove who sent the request. We explain this more in section 5.",
     "The user list and the report list are each read with a single query.",
-    "Admins cannot file reports, and nobody can report their own account. Reviews are only allowed for "
-    "bookings that were checked in or whose date has passed.",
+    "Admins cannot file reports, and nobody can report their own account. A summary needs 3 characters and the "
+    "details 10. Admin accounts can only come from the demo accounts, never from sign-up.",
     [
+        ("+ is_admin(email: str): bool",
+         "is invoked at the start of every admin function.", """
+Start
+Return true if an account with this email has role Admin and is not banned
+End
+"""),
+        ("+ active_role(email: str): str or None",
+         "is invoked by _blocked.", """
+Start
+Return the role of the account if it exists and is not banned, otherwise none
+End
+"""),
+        ("- _blocked(email: str, roles): response or None",
+         "is invoked at the start of every endpoint that changes data.", """
+Start
+Find the role with active_role
+If there is no such account, answer 403
+If roles are given and the role is not one of them, answer 403
+Otherwise let the request continue
+End
+"""),
+        ("+ get_all_users(admin_email: str): list or None",
+         "is invoked by User Accounts.", """
+Start
+If the caller is not an admin, return none
+Read every account, newest sign-up first, with venue names for staff
+End
+"""),
         ("+ set_user_banned(admin_email: str, email: str, banned: bool): dict",
          "is invoked by Ban and Restore in User Accounts and by Ban offender in Reports.", """
 Start
@@ -1280,39 +1628,162 @@ If the admin is banning themself or another admin, refuse
 Save banned, the time and the admin's email (or clear them to restore)
 End
 """),
-        ("- _blocked(email: str, roles): response or None",
-         "is invoked at the start of every endpoint that changes data.", """
+        ("+ create_report(reporter_email, category, offender_type, subject, description, offender_email): dict",
+         "is invoked by Submit Report.", """
 Start
-Find the role of the email, if the account exists and is not banned
-If there is no such account, answer 403
-If roles are given and the role is not one of them, answer 403
-Otherwise let the request continue
+Check category, summary and details
+If the reporter is unknown, banned or an admin, refuse
+If the reporter names their own email, refuse
+If they already have 5 open reports, refuse
+Save the report as Open
 End
 """),
-        ("+ submit_review(email: str, booking_id: int, rating: float, comment: str): dict",
-         "is invoked from My Experiences.", """
+        ("+ resolve_report(admin_email: str, report_id: int, resolution: str): dict",
+         "is invoked by Resolve and after Ban offender.", """
+Start
+If the caller is not an admin, refuse
+Mark the report Resolved with the admin, the time and the resolution text
+End
+"""),
+    ],
+)
+
+# --- Component 9 ------------------------------------------------------------
+component(
+    "Reviews and Support Tickets",
+    [
+        "This component lets customers talk back. After an experience, a customer opens My Experiences, which "
+        "lists bookings that were checked in or whose date has passed, and gives a rating from 0 to 5 in half "
+        "steps with an optional comment. Rating the same booking again updates the first review instead of "
+        "adding a second one. The explore page shows the average for each event, rounded to one decimal.",
+        "Customers can also send a support question about an event. The question goes to the staff of the "
+        "venue where that event happens, who can mark it resolved.",
+    ],
+    [
+        "My Experiences shows past trips as cards with the current rating. A small window opens for the stars "
+        "and the comment. The Support page has an event list, a subject and a message box, and below it the "
+        "customer's own tickets with their status.",
+    ],
+    [
+        ["GET /api/experiences/customer/<email>", "", "past bookings with their review"],
+        ["POST /api/reviews", "customer_email, booking_id, rating, comment", "thank you message"],
+        ["GET /api/events/ratings", "", "average and count per event"],
+        ["POST /api/support", "customer_email, event_title, subject, message", "ticket id"],
+        ["GET /api/support/customer/<email>", "", "the customer's tickets"],
+    ],
+    [
+        "Customer opens My Experiences or Support",
+        "For a review, customer picks a past booking and gives a rating",
+        "System checks the rating and that the booking was attended, then saves it",
+        "For support, customer picks an event and writes the question",
+        "System checks the event and the limit of 3 open tickets, then saves it",
+        "Staff of that venue see the ticket and resolve it",
+    ],
+    [
+        "Both parts live in CustomerWelcomeScreen on the client, while the staff side is in "
+        "StaffWelcomeScreen (Figure {fig}). On the server, reviews are in database_events and support tickets "
+        "in database_core.",
+    ],
+    ("28_class_feedback", "Class diagram of the Reviews and Support Tickets component"),
+    ("37_act_review", "Activity diagram: reviews and support tickets",
+     "both paths check the input twice, once in the form and once on the server, and both end with "
+     "something another person can see: the event's average or a ticket in the staff list."),
+    "Staff can mark a ticket resolved but cannot write an answer inside the app. The reviews table is created "
+    "the first time it is used, which is why the seeder has to create it on purpose.",
+    "Ratings for all events are worked out with one GROUP BY query.",
+    "A support ticket must name an event that is listed or that the customer booked before. The subject needs "
+    "3 characters and the message 10. A review comment can have 500 characters.",
+    [
+        ("+ get_my_experiences(customer_email: str): list",
+         "is invoked when My Experiences opens.", """
+Start
+Take the customer's bookings that are Checked in or Expired, newest first
+Add the rating and comment of each one if it was reviewed
+End
+"""),
+        ("+ submit_review(customer_email, booking_id, rating, comment): dict",
+         "is invoked from the review window.", """
 Start
 Check the rating is 0 to 5 in steps of 0.5 and the comment is short enough
 Check the booking belongs to the user and was attended
 Save the review, or update it if one already exists
 End
 """),
+        ("+ get_event_ratings(): dict",
+         "is invoked when the explore page loads.", """
+Start
+Average the ratings per event
+Round to one decimal with .x5 going up
+End
+"""),
+        ("+ create_support_ticket(customer_email, subject, message, event_title): dict",
+         "is invoked by Send on the Support page.", """
+Start
+Check the event was chosen, subject and message are long enough
+Check the event is listed or was booked by the customer
+If the customer already has 3 open tickets, refuse
+Save the ticket as Open
+End
+"""),
+        ("+ get_support_tickets_by_customer(customer_email: str): list",
+         "is invoked by the Support page to show the customer's own tickets.", """
+Start
+Return the customer's tickets, newest first, with their status
+End
+"""),
     ],
-    figure_after_hierarchy=admin_figures,
 )
 
 h(2, "3.3 Dynamic Behavior for Components")
-para("This part shows how the classes work together while the program runs.")
+para("This part shows how the classes work together while the program runs. As the template asks, we give a "
+     "sequence diagram for each main use case. The numbers on the arrows show the order of the calls.")
 h(3, "3.3.1 Interaction Diagrams")
-para("We placed each sequence diagram next to the component it belongs to, so the reader does not have to "
-     "jump back and forth. For a quick overview, these are the interaction diagrams in this document:")
-bullets([
-    f"Figure {UML_FIG['07_seq_booking_vat']}: a customer books an event and pays (Booking and Payment).",
-    f"Figure {UML_FIG['10_seq_partner_checkout']}: a partner pays for the shopping list (Booking and Payment).",
-    f"Figure {UML_FIG['08_seq_cancel_refund']}: a booker cancels and gets a refund (Cancellations and Refunds).",
-    f"Figure {UML_FIG['09_seq_staff_checkin']}: staff check a ticket in (Venue Operations).",
-    f"Figure {UML_FIG['11_seq_admin_report_ban']}: a report leads to a ban (Administration, Reports and Reviews).",
-])
+
+SEQUENCES = [
+    ("40_seq_signup", "Sequence diagram: sign-up of a staff account",
+     "A staff sign-up is the longest version of sign-up, so we show that one. The client loads the venue list "
+     "first, so the user can only pick a venue that exists. The server checks the SSN and the venue again "
+     "before it saves anything, and it answers with a message the client shows as it is."),
+    ("41_seq_login", "Sequence diagram: login with the ban check",
+     "The server tells apart a wrong password (401) and a banned account (403), so the user gets the right "
+     "message. The client then asks for the role and routing.py opens the matching home screen."),
+    ("42_seq_password_reset", "Sequence diagram: forgot password",
+     "Only the email check reaches the server before the new password is saved. The code itself is checked "
+     "on the client and is always 000000, which is one of the limits listed in section 5."),
+    ("43_seq_create_event", "Sequence diagram: a vendor creates an event with a picture",
+     "The picture travels inside the JSON as base64. The server checks the role, decodes the picture and "
+     "only writes the file after the event row was saved, so a bad picture never leaves a half-made event."),
+    ("07_seq_booking_vat", "Sequence diagram: a customer books an event and pays",
+     "The capacity is read first for the chosen date. The payment window adds VAT and shows the chosen "
+     "currency. Only after the demo payment is approved does the client send the booking, and the server "
+     "checks the seats again inside its transaction before it creates the ticket."),
+    ("10_seq_partner_checkout", "Sequence diagram: a partner pays for the whole shopping list",
+     "Every item in the cart is booked inside one transaction. If one of them fails, for example because the "
+     "event filled up in the meantime, nothing is booked and the cart stays as it was."),
+    ("08_seq_cancel_refund", "Sequence diagram: a booker cancels and gets a refund",
+     "The client shows the refund before the user confirms, but the server decides the real percent again "
+     "when the request arrives, because time has passed in between."),
+    ("09_seq_staff_checkin", "Sequence diagram: staff check a ticket in",
+     "The server finds the staff member's venue itself, from the email, so the client cannot choose another "
+     "venue. A ticket for a different venue is refused without saying anything else about it."),
+    ("44_seq_dispatch", "Sequence diagram: a dispatcher assigns vehicles to an event",
+     "After the two vehicles are assigned, the next capacity read for this event returns 12 seats, because "
+     "_capacity_info adds up the seats of the assigned vehicles."),
+    ("45_seq_support", "Sequence diagram: a support ticket from customer to venue staff",
+     "The ticket is not sent to a person directly. It is stored with its event, and each staff member's list "
+     "is filtered by the venue of that event when they open the page."),
+    ("46_seq_review", "Sequence diagram: a customer reviews a past experience",
+     "The insert uses ON CONFLICT on the booking id, so the second review of the same booking updates the "
+     "first one. The client then reloads the averages for the explore page."),
+    ("11_seq_admin_report_ban", "Sequence diagram: a report leads to a ban",
+     "After the ban the user cannot log in, and every request that changes data is refused by the _blocked "
+     "guard in server.py."),
+]
+for name, caption, text in SEQUENCES:
+    f = next_fig()
+    uml(name, caption, max_height=7.2)
+    para(f"Figure {f}: {text}")
+
 h(3, "3.3.2 State diagram of a booking")
 f = next_fig()
 para(f"A booking moves through a few states (Figure {f}). It starts as Confirmed when it is paid for. From "
@@ -1320,6 +1791,7 @@ para(f"A booking moves through a few states (Figure {f}). It starts as Confirmed
      "passes. Checked in and Expired are not stored in the database. They are worked out from the ticket "
      "and the date each time the booking is read.")
 uml("12_state_booking", "State diagram of a booking and its ticket", width=5.6)
+
 page_break()
 
 # ===========================================================================
@@ -1544,6 +2016,61 @@ table(["Test case", "Input", "Expected response"], [
     ["Self ban", "Admin bans their own email", "Refused"],
 ], "Expected responses", widths=[1.6, 2.1, 2.8], font=SMALL_TABLE_PT)
 
+para("Validation and error messages:", bold=True, keep=True)
+para("A large part of our testing was making sure that wrong input gives a clear message instead of a crash. "
+     "These are the exact messages the user sees for the most common mistakes.")
+table(["Situation", "Message shown to the user"], [
+    ["Wrong email or password", "Invalid email or password."],
+    ["Banned account logs in", "This account has been banned by an administrator."],
+    ["Banned or unknown account sends a request", "This account is unknown or has been banned."],
+    ["Short or weak password at sign-up", "Please choose a valid, secure password (at least 8 characters)."],
+    ["Email or phone not verified", "You must verify both email and phone."],
+    ["SSN with the wrong length", "The SSN must be exactly 16 digits (0-9)."],
+    ["SSN with one digit repeated", "Please enter your real SSN."],
+    ["Staff without a venue", "Please choose the venue you work at."],
+    ["Customer books 11 guests", "You can book 1 to 10 guests at a time."],
+    ["Date in the past", "This date is in the past. Please choose another date."],
+    ["Day the event does not run", "This event is not available on the date you chose."],
+    ["No seats left", "Sorry, this event is fully booked on that date (capacity N)."],
+    ["Cancel in the last 24 hours", "Cancellations close 24 hours before the event starts."],
+    ["Cancel after the start", "This event has already started, so the booking cannot be cancelled."],
+    ["Vendor or admin cancels without a reason", "Please give the customer a reason for the cancellation."],
+    ["Ticket from another venue", "This ticket is not for an event at your venue. Entry refused."],
+    ["Ticket used twice", "Ticket already used! Checked in previously."],
+    ["Fourth open support ticket", "You already have 3 open tickets. Please wait for staff to reply."],
+    ["Rating 4.3", "The rating must be from 0 to 5, in steps of 0.5."],
+    ["Review of a future booking", "You can only review experiences that you already attended."],
+    ["Admin bans own account", "You cannot ban your own account."],
+    ["Picture is not a JPEG", "The picture must be a JPEG."],
+    ["Venue still in use", "Venue is in use by events or staff and cannot be deleted."],
+], "Validation and error messages", widths=[2.4, 4.1], font=SMALL_TABLE_PT)
+para("Traceability from requirements to tests:", bold=True, keep=True)
+para("To make sure every essential function from section 1.2 is really tested, we traced each one to its "
+     "component and to the tests that cover it. Where a function has no automated test, we say so.")
+table(["Function (section 1.2)", "Component", "Covered by"], [
+    ["Sign up and log in for six roles", "Accounts and Sign-in",
+     "AdminTests (demo admin, no admin sign-up, sign-up time, ban and login)"],
+    ["16-digit SSN for non-customers", "Accounts and Sign-in", "StaffVenueTests sign-up tests, manual demo script"],
+    ["Events, venues and categories", "Events and Venues",
+     "test_rename_then_delete_event, test_edit_event_capacity, test_venue_with_staff_cannot_be_deleted"],
+    ["Seat check per date", "Booking and Shopping List", "CapacityTests (13 tests)"],
+    ["Booking with VAT", "Booking and Shopping List", "test_booking_price_and_code, test_refusals"],
+    ["Currency display", "Pricing, Payment and Receipts", "Manual only (demo script)"],
+    ["Demo payment", "Pricing, Payment and Receipts", "test_demo_payment_verification_success and test_demo_payment_verification_failure_when_edited"],
+    ["Booking Details and PDF", "Pricing, Payment and Receipts", "Manual only (demo script)"],
+    ["Ticket check-in", "Venue Operations",
+     "test_scanner_accepts_once_and_reports_guests, test_staff_cannot_check_in_another_venues_ticket"],
+    ["Cancellation and refunds", "Cancellations and Refunds", "CancellationTests (11 tests)"],
+    ["Partner shopping list", "Booking and Shopping List",
+     "test_partner_shopping_list_and_checkout, test_failed_cart_checkout_keeps_no_bookings"],
+    ["Vehicle dispatch", "Fleet and Dispatch",
+     "test_vehicle_combination_sets_the_capacity, test_freeing_a_vehicle_goes_back_to_vendor_capacity"],
+    ["Admin, bans and reports", "Administration and Reports", "AdminTests, ReportTests, ApiAccountGuardTests"],
+    ["Support tickets", "Reviews and Support Tickets",
+     "test_support_tickets, test_support_tickets_are_scoped_to_the_staff_venue"],
+    ["Reviews", "Reviews and Support Tickets", "Manual only (demo script)"],
+], "Traceability from functions to components and tests", widths=[1.9, 1.7, 2.9], font=SMALL_TABLE_PT)
+
 h(2, "6.3 Performance bounds")
 bullets([
     ("Response time: ", "a booking, cancellation or check-in is one short SQLite transaction and shows its "
@@ -1584,6 +2111,62 @@ table(["Team member", "Part of this document"], [
     ["Omar Arif", "Section 5 Restrictions, limitations, and constraints"],
     ["Oumar Ibrahim", "Section 6 Testing issues"],
 ], "Who wrote which part", widths=[2.2, 4.3])
+
+h(1, "Appendix A: Server endpoint reference")
+para("This is the full list of endpoints in server/server.py. The Guard column says what the server checks "
+     "before it does the work. 'Role' means the _blocked guard with those roles, 'Any active' means _blocked "
+     "without a role, and 'None' means the endpoint has no check. The 'None' rows that change data are the "
+     "gaps we describe in section 5.")
+table(["Method", "Path", "Guard"], [
+    ["POST", "/api/auth/login", "Password check, banned accounts get 403"],
+    ["GET", "/api/auth/role/<email>", "None (read only)"],
+    ["POST", "/api/users/register", "SSN and staff venue rules"],
+    ["PUT", "/api/users/password", "None"],
+    ["GET / PUT", "/api/users/currency", "None / known user and currency"],
+    ["GET / PUT", "/api/staff/venue", "Staff role, not banned"],
+    ["GET", "/api/users/email_exists, phone_exists, email", "None (read only)"],
+    ["GET", "/api/admin/users", "Admin"],
+    ["POST", "/api/admin/users/ban", "Admin, not self, not another admin"],
+    ["POST", "/api/reports", "Known, not banned, not admin"],
+    ["GET", "/api/admin/reports", "Admin"],
+    ["POST", "/api/admin/reports/<id>/resolve", "Admin"],
+    ["GET", "/api/venues, /api/venues/vendor/<email>", "None (read only)"],
+    ["POST", "/api/venues", "Role: Vendor"],
+    ["PUT", "/api/venues/<id>/maps_url", "Venue must belong to the vendor"],
+    ["DELETE", "/api/venues/<id>", "None (refused while in use)"],
+    ["GET / POST", "/api/vendor_categories", "None"],
+    ["DELETE", "/api/vendor_categories/<id>", "None"],
+    ["GET", "/api/events, /vendor/<email>, /venue/<id>", "None (read only)"],
+    ["GET", "/api/events/today", "Staff at a venue"],
+    ["POST", "/api/events", "Role: Vendor"],
+    ["PUT / DELETE", "/api/events/<id>", "None"],
+    ["GET", "/api/events/<id>/capacity, /demand, /active_bookings", "None (read only)"],
+    ["GET", "/api/events/<id>/image", "None (read only)"],
+    ["GET", "/api/events/ratings", "None (read only)"],
+    ["POST", "/api/bookings", "Any active account"],
+    ["GET", "/api/bookings/customer/<email>, /vendor/<email>", "None (read only)"],
+    ["POST", "/api/bookings/<id>/cancel", "Any active account, must be the booker"],
+    ["POST", "/api/bookings/<id>/vendor_cancel", "Role: Vendor, must own the event"],
+    ["GET", "/api/admin/bookings", "Admin"],
+    ["POST", "/api/admin/bookings/<id>/cancel", "Admin"],
+    ["POST", "/api/tickets/verify", "Staff at the ticket's venue"],
+    ["POST", "/api/support", "Any active account"],
+    ["GET", "/api/support/customer/<email>", "None (read only)"],
+    ["GET", "/api/support/open", "Staff at a venue"],
+    ["POST", "/api/support/<id>/resolve", "Staff at the ticket's venue"],
+    ["GET", "/api/vehicle_types, /api/vehicles/<email>", "None (read only)"],
+    ["POST / DELETE", "/api/vehicles, /api/vehicles/<id>", "None"],
+    ["PUT / POST", "/api/vehicles/<id>/status, /free", "None"],
+    ["GET / POST", "/api/dispatch/<event_id>, /api/dispatch", "None"],
+    ["GET", "/api/dispatch/<event_id>/vehicles", "None (read only)"],
+    ["GET", "/api/cart/<email>, /count", "None (read only)"],
+    ["POST", "/api/cart", "Role: Partner"],
+    ["POST", "/api/cart/<id>/remove", "Item must belong to the partner"],
+    ["POST", "/api/cart/<email>/clear", "None"],
+    ["POST", "/api/cart/<email>/checkout", "Role: Partner"],
+    ["GET", "/api/experiences/customer/<email>", "None (read only)"],
+    ["POST", "/api/reviews", "Any active account, booking attended"],
+], "Every server endpoint and its guard", widths=[1.0, 3.2, 2.3], font=SMALL_TABLE_PT)
 
 page_numbers()
 doc.save(OUT_DOCX)

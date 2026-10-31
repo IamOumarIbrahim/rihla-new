@@ -1,0 +1,34 @@
+%% Component class diagram: Cancellations and Refunds
+classDiagram
+  direction TB
+  class cancellation {
+    <<welcome/cancellation.py>>
+    +policy_line(booking) str
+    +cancelled_line(booking, viewer) str
+    +confirm_own_cancel(booking) bool
+    +ask_reason(parent, booking) str
+    +page_header(parent, title, on_refresh)
+  }
+  class CustomerWelcomeScreen {
+    +handle_cancel_booking(booking)
+  }
+  class PartnerWelcomeScreen {
+    +handle_cancel(booking)
+  }
+  class VendorWelcomeScreen
+  class AdminWelcomeScreen
+  class database_events {
+    <<module>>
+    +cancel_booking(id, email, reason) dict
+    +vendor_cancel_booking(id, vendor, reason) dict
+    +admin_cancel_booking(id, admin, reason) dict
+    +_cancel(id, actor, role, reason, owner_check, by_operator) dict
+    +refund_percent_for(start, now) int
+    +split_refund(total, percent) tuple
+    +_event_start(date, time) datetime
+  }
+  CustomerWelcomeScreen ..> cancellation
+  PartnerWelcomeScreen ..> cancellation
+  VendorWelcomeScreen ..> cancellation
+  AdminWelcomeScreen ..> cancellation
+  cancellation ..> database_events : via api_client

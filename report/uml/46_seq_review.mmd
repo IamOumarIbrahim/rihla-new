@@ -1,0 +1,25 @@
+%% Sequence diagram: customer reviews a past experience
+sequenceDiagram
+  autonumber
+  actor C as Customer
+  participant CW as My Experiences
+  participant AC as api_client
+  participant SV as server.py
+  participant DE as database_events
+  participant DB as users.db
+  C->>CW: open My Experiences
+  CW->>AC: get_my_experiences(email)
+  AC->>SV: GET /api/experiences/customer/{email}
+  SV->>DE: checked-in or expired bookings with reviews
+  SV-->>CW: list
+  C->>CW: 4.5 stars and a comment, Submit
+  CW->>AC: submit_review(email, booking_id, 4.5, comment)
+  AC->>SV: POST /api/reviews
+  SV->>SV: _blocked(email)
+  SV->>DE: submit_review()
+  DE->>DE: rating in half steps, booking attended
+  DE->>DB: INSERT ... ON CONFLICT(booking_id) DO UPDATE
+  SV-->>CW: Thank you for your review!
+  CW->>AC: get_event_ratings()
+  AC->>SV: GET /api/events/ratings
+  SV-->>CW: new average per event

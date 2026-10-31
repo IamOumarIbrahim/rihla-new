@@ -1,0 +1,42 @@
+%% Component class diagram: Fleet and Dispatch
+classDiagram
+  direction TB
+  class BaseWelcomeScreen
+  class DispatcherWelcomeScreen
+  class VehicleView {
+    +build_register_content()
+    +build_fleet_management_content()
+    +handle_delete(vehicles)
+    +handle_status(status)
+    +open_filter_window(col, name, vehicles)
+  }
+  class DispatchView {
+    +build_dispatch_content()
+    +_build_available_section(event, vehicles)
+    +_build_assigned_section(vehicles)
+    +_open_filter_window(table, col, name, rows)
+  }
+  class table_style {
+    <<module>>
+    +style_tables()
+    +heading_text(name, active)
+    +build_count_table(parent, items)
+  }
+  class database_events {
+    <<module>>
+    +get_vehicle_types() list
+    +get_all_vehicles(dispatcher) list
+    +create_vehicle(...)
+    +delete_vehicle(id)
+    +update_vehicle_status(id, status)
+    +free_vehicle(id)
+    +dispatch_vehicle_combination(event_id, items) int
+    +get_dispatches_by_event(event_id) list
+  }
+  BaseWelcomeScreen <|-- DispatcherWelcomeScreen
+  DispatcherWelcomeScreen *-- VehicleView
+  DispatcherWelcomeScreen *-- DispatchView
+  VehicleView ..> table_style
+  DispatchView ..> table_style
+  VehicleView ..> database_events : via api_client
+  DispatchView ..> database_events : via api_client

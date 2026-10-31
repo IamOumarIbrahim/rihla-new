@@ -1,0 +1,16 @@
+%% Activity diagram: dispatcher assigns vehicles
+flowchart TD
+  A([Open Event Dispatch]) --> B[Select an event]
+  B --> C[Show assigned vehicles and their seats]
+  C --> D[Filter available vehicles by type and location]
+  D --> E[Tick vehicles and choose reassign option]
+  E --> F[Press Assign]
+  F --> G[For each vehicle: set Assigned only if still Available]
+  G --> H[Link vehicle to event]
+  H --> I[Event capacity becomes the sum of vehicle seats]
+  I --> J{Free a vehicle later?}
+  J -- yes --> K[Set Available, assignment Concluded]
+  K --> L{Any vehicles left on the event?}
+  L -- no --> M[Capacity goes back to vendor's number]
+  L -- yes --> I
+  J -- no --> N([Done])

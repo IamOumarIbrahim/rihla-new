@@ -1,0 +1,36 @@
+%% Component class diagram: Events and Venues
+classDiagram
+  direction TB
+  class BaseWelcomeScreen
+  class VendorWelcomeScreen {
+    +build_vendor_content()
+    +build_bookings_content()
+    +build_venues_content()
+    +build_categories_content()
+    +open_event_form(title, event)
+    +open_maps_link_window(venue)
+    +handle_delete(event_id)
+  }
+  class event_images {
+    <<module>>
+    +load_image(event_id)
+    +encode_image_file(path, max_side) str
+    +forget(event_id)
+  }
+  class CoverImage
+  class database_events {
+    <<module>>
+    +create_event(...)
+    +update_event(...)
+    +delete_event(event_id)
+    +create_venue(name, address, vendor, maps_url)
+    +delete_venue(venue_id) bool
+    +validate_maps_url(url) tuple
+    +update_venue_maps_url(id, vendor, url) dict
+    +add_vendor_category(vendor, name) bool
+    +get_bookings_by_vendor(vendor) list
+  }
+  BaseWelcomeScreen <|-- VendorWelcomeScreen
+  VendorWelcomeScreen ..> event_images
+  event_images *-- CoverImage
+  VendorWelcomeScreen ..> database_events : via api_client

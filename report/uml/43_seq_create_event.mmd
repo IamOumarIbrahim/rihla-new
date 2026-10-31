@@ -1,0 +1,25 @@
+%% Sequence diagram: vendor creates an event with a picture
+sequenceDiagram
+  autonumber
+  actor V as Vendor
+  participant VW as VendorWelcomeScreen
+  participant EI as event_images
+  participant AC as api_client
+  participant SV as server.py
+  participant DE as database_events
+  participant FS as event_images folder
+  V->>VW: Add New Event, fill the form
+  V->>VW: choose a picture file
+  VW->>EI: encode_image_file(path)
+  EI-->>VW: base64 JPEG (max 1400 px)
+  V->>VW: Save
+  VW->>AC: create_event(..., image_b64)
+  AC->>SV: POST /api/events
+  SV->>SV: _blocked(vendor_email, Vendor)
+  SV->>SV: _decode_image (JPEG, max 4 MB)
+  SV->>DE: create_event(..., capacity)
+  DE->>DE: capacity between 1 and 5000
+  DE-->>SV: saved
+  SV->>FS: write <event id>.jpg
+  SV-->>VW: Event created
+  VW-->>V: My Events refreshed with the new card

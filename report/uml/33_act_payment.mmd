@@ -1,0 +1,18 @@
+%% Activity diagram: payment window and receipt
+flowchart TD
+  A([Payment window opens]) --> B[vat_breakdown: base, 5% VAT, total]
+  B --> C[Show prices in preferred currency]
+  C --> D{User changes currency?}
+  D -- yes --> E[format_money with fixed rate] --> D
+  D -- no --> F[Pick Visa, Mastercard or bank transfer]
+  F --> G[Form filled with demo details]
+  G --> H[Press Pay]
+  H --> I{verify_demo_payment: all fields match?}
+  I -- no --> J[Show which field does not match] --> G
+  I -- yes --> K[Create TXN id and close window]
+  K --> L[Booking saved by the server]
+  L --> M[Build receipt lines]
+  M --> N{Download PDF?}
+  N -- yes --> O[build_pdf and save to Downloads without overwriting]
+  N -- no --> P([Close])
+  O --> P

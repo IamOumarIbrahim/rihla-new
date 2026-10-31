@@ -1,0 +1,30 @@
+%% Component class diagram: Reviews and Support Tickets
+classDiagram
+  direction TB
+  class CustomerWelcomeScreen {
+    +build_experiences_content()
+    +open_review_window(exp)
+    +build_support_content()
+    +_refresh_ratings()
+  }
+  class StaffWelcomeScreen {
+    +build_support_content()
+    +handle_resolve_ticket(id)
+  }
+  class database_events {
+    <<module>>
+    +get_my_experiences(email) list
+    +submit_review(email, booking_id, rating, comment) dict
+    +get_event_ratings() dict
+    +_ensure_reviews_table(conn)
+  }
+  class database_core {
+    <<module>>
+    +create_support_ticket(email, subject, message, event) dict
+    +get_support_tickets_by_customer(email) list
+    +get_open_support_tickets(venue_id) list
+    +resolve_support_ticket(id, staff, venue_id) bool
+  }
+  CustomerWelcomeScreen ..> database_events : via api_client
+  CustomerWelcomeScreen ..> database_core : via api_client
+  StaffWelcomeScreen ..> database_core : via api_client

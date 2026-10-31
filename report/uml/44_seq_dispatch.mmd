@@ -1,0 +1,24 @@
+%% Sequence diagram: dispatcher assigns vehicles to an event
+sequenceDiagram
+  autonumber
+  actor D as Dispatcher
+  participant DV as DispatchView
+  participant AC as api_client
+  participant SV as server.py
+  participant DE as database_events
+  participant DB as users.db
+  D->>DV: open Event Dispatch, pick event
+  DV->>AC: get_all_vehicles(email), get_assigned_vehicles_for_event(id)
+  AC->>SV: GET /api/vehicles/{email}, GET /api/dispatch/{id}/vehicles
+  SV-->>DV: available and assigned vehicles
+  D->>DV: tick two 4x4 vehicles, Assign
+  DV->>AC: dispatch_vehicle_combination(event_id, items)
+  AC->>SV: POST /api/dispatch
+  SV->>DE: dispatch_vehicle_combination()
+  loop each vehicle
+    DE->>DB: UPDATE vehicles SET Assigned WHERE Available
+    DE->>DB: INSERT event_vehicles (Assigned)
+  end
+  DE-->>DV: assigned = 2
+  Note over DV,DB: _capacity_info now sums vehicle seats (2 x 6 = 12)
+  DV-->>D: tables refreshed

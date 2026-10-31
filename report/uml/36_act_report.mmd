@@ -1,0 +1,17 @@
+%% Activity diagram: report and moderation
+flowchart TD
+  A([User presses Report]) --> B[Pick category and who it is about]
+  B --> C[Write summary and details]
+  C --> D{Summary 3+ chars, details 10+ chars?}
+  D -- no --> E[Show error] --> C
+  D -- yes --> F{Reporter active, not admin, under 5 open reports?}
+  F -- no --> G([Refused])
+  F -- yes --> H[Save report as Open]
+  H --> I[Admin opens Reports, oldest open first]
+  I --> J{Action}
+  J -- Resolve --> K[Mark Resolved with resolution text]
+  J -- Ban offender --> L{Offender is self or an admin?}
+  L -- yes --> M[Refused]
+  L -- no --> N[Ban account and resolve report]
+  N --> O([Offender gets 403 on login and writes])
+  K --> P([Done])

@@ -1,0 +1,28 @@
+%% Sequence diagram: sign-up of a staff account
+sequenceDiagram
+  autonumber
+  actor U as New user
+  participant CA as create_account screen
+  participant AC as api_client
+  participant SV as server.py
+  participant DC as database_core
+  participant DB as users.db
+  U->>CA: choose Staff, type SSN, venue, manager email
+  CA->>AC: get_all_venues()
+  AC->>SV: GET /api/venues
+  SV-->>CA: venue list
+  U->>CA: verify email and phone (code 000000)
+  U->>CA: Create Account
+  CA->>CA: check password, terms, 16 digits, manager email
+  CA->>AC: register_user(email, password, Staff, phone, ssn, venue, manager)
+  AC->>SV: POST /api/users/register
+  SV->>DC: ssn_error(role, ssn)
+  SV->>DC: staff_venue_error(venue_id, manager_email)
+  alt problem found
+    SV-->>CA: 400 with the message
+  else all fine
+    SV->>DC: register_user(...)
+    DC->>DB: INSERT users (hashed password, hashed SSN, last 4, venue)
+    SV-->>CA: success
+    CA->>CA: open the Staff home screen
+  end

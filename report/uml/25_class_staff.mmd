@@ -1,0 +1,35 @@
+%% Component class diagram: Venue Operations
+classDiagram
+  direction TB
+  class BaseWelcomeScreen {
+    +_add_staff_venue_settings(modal)
+    +on_staff_venue_changed()
+  }
+  class StaffWelcomeScreen {
+    +build_operations_content()
+    +build_checkin_card(venue)
+    +render_today_schedule()
+    +build_support_content()
+    +render_support_list()
+    +handle_resolve_ticket(id)
+  }
+  class DigitBoxes
+  class database_events {
+    <<module>>
+    +staff_verify_ticket(staff, code, title) dict
+    +verify_ticket_code(code, title, venue_id) dict
+    +_ticket_venue_id(conn, code, title) int
+    +get_staff_schedule(staff) list
+    +get_events_today(venue_id) list
+  }
+  class database_core {
+    <<module>>
+    +get_staff_venue(email) dict
+    +get_staff_support_tickets(staff) list
+    +staff_resolve_support_ticket(id, staff) bool
+  }
+  BaseWelcomeScreen <|-- StaffWelcomeScreen
+  StaffWelcomeScreen *-- DigitBoxes : ticket code
+  StaffWelcomeScreen ..> database_events : via api_client
+  StaffWelcomeScreen ..> database_core : via api_client
+  database_events ..> database_core
