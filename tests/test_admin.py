@@ -126,5 +126,39 @@ class ReportTests(unittest.TestCase):
         self.assertFalse(core.resolve_report("staff@email.com", report_id)["success"])
 
 
+class ApiAccountGuardTests(unittest.TestCase):
+    """The API refuses writes from banned or unknown accounts, and from the wrong role."""
+
+    def setUp(self):
+        import server
+        self.tmp = tempfile.TemporaryDirectory()
+        core.DB_PATH = os.path.join(self.tmp.name, "test.db")
+        core.init_db()
+        self.client = server.app.test_client()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def booking_status(self, email):
+        return self.client.post("/api/bookings", json={"customer_email": email, "event_id": 9999,
+                                                       "booking_date": "2099-01-01", "guests": 1}).status_code
+
+    def test_banned_and_unknown_accounts_cannot_book_or_open_tickets(self):
+        self.assertEqual(self.booking_status("customer@email.com"), 400)  # gets past the guard, event is unknown
+        self.assertEqual(self.booking_status("nobody@email.com"), 403)
+        core.set_user_banned(ADMIN, "customer@email.com", True)
+        self.assertEqual(self.booking_status("customer@email.com"), 403)
+        resp = self.client.post("/api/support", json={"customer_email": "customer@email.com", "subject": "Help",
+                                                      "message": "A message that is long enough", "event_title": "x"})
+        self.assertEqual(resp.status_code, 403)
+
+    def test_cart_and_vendor_actions_need_the_right_role(self):
+        cart = {"event_id": 9999, "booking_date": "2099-01-01", "guests": 1}
+        self.assertEqual(self.client.post("/api/cart", json={**cart, "partner_email": "customer@email.com"}).status_code, 403)
+        self.assertEqual(self.client.post("/api/cart", json={**cart, "partner_email": "partner@email.com"}).status_code, 400)
+        venue = {"name": "X", "address": "Y", "vendor_email": "customer@email.com"}
+        self.assertEqual(self.client.post("/api/venues", json=venue).status_code, 403)
+
+
 if __name__ == "__main__":
     unittest.main()

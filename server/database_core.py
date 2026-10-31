@@ -1,6 +1,6 @@
 import hashlib
 import hmac
-from datetime import date, datetime
+from datetime import datetime
 import os
 import re
 import secrets
@@ -545,6 +545,15 @@ def is_admin(email):
             ((email or "").strip(), ADMIN_ROLE),
         ).fetchone()
     return row is not None
+
+
+def active_role(email):
+    """The role of an existing, not banned account, or None (unknown email or banned)."""
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT role FROM users WHERE lower(email) = lower(?) AND banned = 0", ((email or "").strip(),)
+        ).fetchone()
+    return None if row is None else (row[0] or "Customer")
 
 
 def get_all_users(admin_email):

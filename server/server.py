@@ -36,6 +36,16 @@ def _err(message, status=400):
     return jsonify({"success": False, "message": message}), status
 
 
+def _blocked(email, *roles):
+    """An error response when the account is unknown, banned or (when roles are given) has the wrong role."""
+    role = core.active_role(email)
+    if role is None:
+        return _err("This account is unknown or has been banned.", 403)
+    if roles and role not in roles:
+        return _err(f"Only {' or '.join(roles)} accounts can do this.", 403)
+    return None
+
+
 # -----------------------------------------------------------------------
 # Auth
 # -----------------------------------------------------------------------
@@ -200,6 +210,9 @@ def get_venues_by_vendor(vendor_email):
 @app.route("/api/venues", methods=["POST"])
 def create_venue():
     body = request.get_json(silent=True) or {}
+    blocked = _blocked(body.get("vendor_email", ""), "Vendor")
+    if blocked:
+        return blocked
     maps_url, problem = events.validate_maps_url(body.get("maps_url", ""))
     if problem:
         return _err(problem)
@@ -279,6 +292,9 @@ def get_events_today():
 @app.route("/api/events", methods=["POST"])
 def create_event():
     body = request.get_json(silent=True) or {}
+    blocked = _blocked(body.get("vendor_email", ""), "Vendor")
+    if blocked:
+        return blocked
     try:
         image_bytes = _decode_image(body.get("image_b64"))
         events.create_event(
@@ -348,10 +364,15 @@ def count_active_bookings(event_id):
 @app.route("/api/bookings", methods=["POST"])
 def create_booking():
     body = request.get_json(silent=True) or {}
+    email = body.get("customer_email", "")
+    blocked = _blocked(email)
+    if blocked:
+        return blocked
+    # Partner booking rules (no per-booking guest cap) follow the account's role, not what the client says.
     result = events.create_booking(
-        body.get("customer_email", ""), body.get("event_id"),
+        email, body.get("event_id"),
         body.get("booking_date"), body.get("guests", 1),
-        body.get("is_partner", False), body.get("client_name", "")
+        core.get_role(email) == "Partner", body.get("client_name", "")
     )
     if result["success"]:
         return _ok(result)
@@ -371,6 +392,9 @@ def get_bookings_by_vendor(vendor_email):
 @app.route("/api/bookings/<int:booking_id>/cancel", methods=["POST"])
 def cancel_booking(booking_id):
     body = request.get_json(silent=True) or {}
+    blocked = _blocked(body.get("customer_email", ""))
+    if blocked:
+        return blocked
     result = events.cancel_booking(booking_id, body.get("customer_email", ""), body.get("reason", ""))
     if result["success"]:
         return _ok(result)
@@ -380,6 +404,9 @@ def cancel_booking(booking_id):
 @app.route("/api/bookings/<int:booking_id>/vendor_cancel", methods=["POST"])
 def vendor_cancel_booking(booking_id):
     body = request.get_json(silent=True) or {}
+    blocked = _blocked(body.get("vendor_email", ""), "Vendor")
+    if blocked:
+        return blocked
     result = events.vendor_cancel_booking(booking_id, body.get("vendor_email", ""), body.get("reason", ""))
     if result["success"]:
         return _ok(result)
@@ -424,6 +451,9 @@ def verify_ticket():
 @app.route("/api/support", methods=["POST"])
 def create_support_ticket():
     body = request.get_json(silent=True) or {}
+    blocked = _blocked(body.get("customer_email", ""))
+    if blocked:
+        return blocked
     result = core.create_support_ticket(
         body.get("customer_email", ""), body.get("subject", ""), body.get("message", ""),
         body.get("event_title", ""),
@@ -535,6 +565,9 @@ def get_cart_count(partner_email):
 @app.route("/api/cart", methods=["POST"])
 def add_to_cart():
     body = request.get_json(silent=True) or {}
+    blocked = _blocked(body.get("partner_email", ""), "Partner")
+    if blocked:
+        return blocked
     result = events.add_to_cart(
         body.get("partner_email", ""), body.get("event_id"),
         body.get("booking_date"), body.get("guests", 1), body.get("client_name", "")
@@ -561,6 +594,9 @@ def clear_cart(partner_email):
 
 @app.route("/api/cart/<path:partner_email>/checkout", methods=["POST"])
 def checkout_cart(partner_email):
+    blocked = _blocked(partner_email, "Partner")
+    if blocked:
+        return blocked
     result = events.checkout_cart(partner_email)
     if result["success"]:
         return _ok(result)
@@ -658,6 +694,9 @@ def get_event_ratings():
 @app.route("/api/reviews", methods=["POST"])
 def submit_review():
     body = request.get_json(silent=True) or {}
+    blocked = _blocked(body.get("customer_email", ""))
+    if blocked:
+        return blocked
     result = events.submit_review(
         body.get("customer_email", ""), body.get("booking_id"),
         body.get("rating"), body.get("comment", "")

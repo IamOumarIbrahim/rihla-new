@@ -102,7 +102,8 @@ class PartnerWelcomeScreen(BaseWelcomeScreen):
         banner = tk.Frame(self.scrollable_frame, bg=t.DARK_SOFT, padx=25, pady=15)
         banner.pack(fill=tk.X, padx=30, pady=(20, 10))
 
-
+        globe_lbl = tk.Label(banner, text="OTA Partner Booking Portal", font=(t.FONT, 15, "bold"),
+                             bg=t.DARK_SOFT, fg="white")
         globe_img = ic.get_icon("globe", size=18, color="#ffffff", master=banner)
         if globe_img:
             globe_lbl.config(image=globe_img, compound=tk.LEFT)

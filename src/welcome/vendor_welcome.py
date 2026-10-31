@@ -177,7 +177,10 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
         action_row.pack(fill=tk.X, padx=30, pady=(6, 10))
         cancel_btn = cancel_button(action_row)
         cancel_btn.pack(side=tk.LEFT, ipadx=10, ipady=4)
-
+        # Empty until a row is selected; then shows the cancellation details or what cancelling does.
+        detail = tk.Label(action_row, text="", font=(t.FONT, 9), bg=t.PAGE_BG, fg=t.TEXT_MUTED,
+                          wraplength=650, justify="left")
+        detail.pack(side=tk.LEFT, padx=12)
 
         def selected_booking():
             chosen = tree.selection()
