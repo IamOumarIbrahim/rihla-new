@@ -341,6 +341,14 @@ para("One thing changed a lot since Phase 1. Our first plan was to write a custo
      "could learn and finish in one semester, so we moved to plain Python. "
      "Rihla is now a Tkinter desktop app that talks to a small Flask server, and the server keeps everything "
      "in one SQLite file. Everything in this document describes that final version.")
+para("Looking back, our way of working was closer to the evolutionary, or iterative and incremental, model "
+     "from Lecture 5 than to the waterfall model. We did not design everything first and code it once. We "
+     "built a small working version, tested it, and then added one feature at a time: VAT and currencies, "
+     "cancellations and refunds, the admin role, the SSN rule, staff venues. Each step ended with the full "
+     "test suite passing. The lecture lists the main risk of this model as problems with the architecture, "
+     "because not all requirements are known at the start. We felt that risk ourselves. For example, the "
+     "users table was designed before the admin and staff venue features existed, which is why their "
+     "columns were added later by init_db.")
 
 h(2, "1.1 Goals and objectives")
 para("Small tour companies in Dubai still take many bookings over the phone and on WhatsApp. When a tourist, "
@@ -397,6 +405,40 @@ table(["Function", "Priority", "Where it stands"], [
     ["Arabic and other languages", "Future", "Not done. English only."],
 ], "Ranking of the major functions", widths=[2.7, 1.0, 2.8])
 
+para("", bold_lead="User stories", keep=True)
+para("Lecture 6 presents requirements as user stories in the form 'As a <role>, I need <capability>, so that "
+     "<business value>'. We used this form to check that each role really gets something from the system. "
+     "A few examples:")
+table(["Role", "User story"], [
+    ["Customer", "As a customer, I need to see how many seats are left on a date, so that I do not try to "
+     "book a full event."],
+    ["Partner", "As a travel agency, I need to pay for several events in one go, so that my client group is "
+     "either fully booked or not booked at all."],
+    ["Vendor", "As a vendor, I need to cancel a booking with a reason, so that the customer knows why and "
+     "gets a full refund."],
+    ["Staff", "As a staff member, I need to check a ticket in only once and only at my venue, so that "
+     "nobody enters twice or at the wrong place."],
+    ["Dispatcher", "As a dispatcher, I need the event's seats to follow the vehicles I assign, so that we "
+     "never sell more seats than we can drive."],
+    ["Admin", "As an admin, I need to ban an account from a report, so that a bad user is stopped at once."],
+], "Example user stories", widths=[1.2, 5.3], font=SMALL_TABLE_PT)
+para("", bold_lead="Non-functional requirements (FURPS+)", keep=True)
+para("Lecture 6 groups the non-functional requirements as FURPS+: Functionality (here mainly security), "
+     "Usability, Reliability, Performance and Supportability, plus extra constraints. This is how Rihla "
+     "meets each of them:")
+table(["Quality", "How the design meets it"], [
+    ["Functionality (security)", "Salted PBKDF2 hashes for passwords and SSNs, the _blocked guard for banned "
+     "and unknown accounts, staff limited to their own venue."],
+    ["Usability", "One frame for every role, quick demo accounts, clear messages from the server, a calendar "
+     "that only allows valid dates."],
+    ["Reliability", "Seat checks and the cart checkout run inside one database transaction, a ticket can "
+     "only be used once."],
+    ["Performance", "Short transactions, a 10 second client timeout, pictures shrunk to 1400 pixels."],
+    ["Supportability", "init_db upgrades older databases, dummy_data.ps1 resets the demo data, 70 automated "
+     "tests."],
+    ["+ (constraints)", "Python 3.12 on Windows, money in AED with 5% VAT, no real payments."],
+], "FURPS+ quality requirements", widths=[1.6, 4.9], font=SMALL_TABLE_PT)
+
 h(2, "1.3 Software context")
 para("Tourism is one of the largest industries in Dubai, and most visitors book at least one desert or sea "
      "trip. The companies that run these trips are often small and sell through many channels at once: their "
@@ -426,6 +468,13 @@ bullets([
     ("Easy to demo: ", "the server creates six demo accounts when it starts, and dummy_data.ps1 fills the "
      "database with events, bookings and reviews whose dates are relative to today."),
 ])
+para("Lecture 1 lists poor configuration management and inadequate testing among the main reasons why "
+     "software projects fail, so we treated both as constraints from the start. The whole project lives in "
+     "one Git repository, which is the software configuration management tool from Lecture 3. Every commit "
+     "is a version we can compare with or go back to, and the commit messages say what changed and why. We "
+     "worked on a single main branch instead of topic branches, which is the simple centralized workflow "
+     "from the lecture. It is simple and fits a small team, but every change has to start from the latest "
+     "version of shared files such as the database modules, or work gets lost in a merge.")
 page_break()
 
 # ===========================================================================
@@ -699,6 +748,19 @@ para("A good example of why this matters is the seat check. The event page check
      "double booking. In Phase 1 we had planned a 15-minute seat lock instead, but the transaction turned out "
      "to be simpler and safer.")
 
+para("Lecture 6 describes an architecture as the set of high-level decisions that are made early and are "
+     "hard to change later. It also says that an architectural style is made of components, connectors, "
+     "interfaces and a configuration. In Rihla the components are the screens, the Flask server and the two "
+     "data modules. The connectors are HTTP requests with JSON between client and server, and plain Python "
+     "calls and SQL on the server. The interfaces are the server endpoints listed in Appendix A, and the "
+     "configuration is the picture in Figure 1.")
+para("Rihla mixes three of the well-known styles from the same lecture. It is client/server, because the "
+     "Tkinter client is the triggering process and the Flask server is the reactive one that accepts or "
+     "refuses each request. It is layered, because each layer only uses the one below it. And it has a "
+     "central repository, because all data lives in one database that only the server opens. Our API also "
+     "borrows from REST: events, bookings and venues are resources with their own paths, and GET, POST, PUT "
+     "and DELETE are used on them. We are not fully RESTful, though. Actions such as /cancel or /checkout "
+     "are verbs in the path, which a strict REST design would avoid.")
 para("", bold_lead="Design decisions and alternatives", keep=True)
 para("While building Rihla we had to choose between several options more than once. The table below lists the "
      "main choices, what we picked and why. Some of them have a price, and we come back to those in section 5.")
@@ -729,6 +791,15 @@ h(2, "3.1 System Structure")
 para("The client is organised by screen and the server by data area. The welcome package in the client has "
      "one module per role and a few shared views: ReportView, VehicleView, DispatchView, the cancellation "
      "helpers and the shared table style. The server has the API module and the two data modules.")
+para("When we split the code we tried to follow the coupling and cohesion rule from Lecture 2: each module "
+     "should have one clear purpose (high cohesion) and depend on as few other modules as possible (low "
+     "coupling). pricing.py only does money, booking_pdf.py only writes PDF files, and cancellation.py only "
+     "holds the cancel dialogs. On the coupling side, no screen talks to the database. They all go through "
+     "api_client.py, so the server can change its SQL without any screen noticing. The same lecture warns "
+     "against cyclic dependencies between packages. We met this problem directly: the login screen opens "
+     "the home screens and the home screens open the login screen again on Log Out. navigate.py solves it by "
+     "importing each screen only inside the function that shows it, so the modules never import each other "
+     "at load time.")
 h(3, "3.1.1 Architecture diagram")
 f1 = next_fig()
 para(f"The full class diagram did not fit on one page, so we split it in two. Figure {f1} shows the home "
@@ -738,6 +809,10 @@ uml("05a_class_client_screens", "Class diagram, part 1: the home screens and sha
 para(f"Figure {f1}: every role gets its own subclass of BaseWelcomeScreen, so the menu, top bar and settings "
      "look the same everywhere and each subclass only adds its own pages. The dispatcher screen is the only "
      "one that is built from two helper views, because its fleet and dispatch pages are large.")
+para("The diagram also follows the advice from Lecture 2 to use inheritance for 'is a' relationships and "
+     "composition for 'has a' relationships. A CustomerWelcomeScreen is a BaseWelcomeScreen, so it inherits. "
+     "A DispatcherWelcomeScreen has a VehicleView and a DispatchView, which cannot exist without it, so "
+     "they are drawn with a filled diamond (composition).")
 uml("05b_class_modules_server", "Class diagram, part 2: client modules, Flask server and data modules")
 para(f"Figure {f1 + 1}: the screens only know api_client. The payment window uses pricing for VAT and "
      "currency and booking_pdf for the receipt. On the server side, server.py calls the two data modules.")
@@ -760,6 +835,14 @@ para("We split Rihla into nine components. Most of them follow a role (the vendo
      "Each component is described with the template headings. Under 3.2.3.1 we show a small class diagram "
      "of the classes and modules that make up the component, followed by an activity diagram of its main "
      "flow. Each operation is given with its real Python name, so it can be found in the code.")
+
+
+para("For each component we also asked the question from Lecture 4: which object should be responsible "
+     "for each step? In the lecture's door lock example, the Controller and not the key Checker signals the "
+     "result, so the Checker can stay focused on checking keys. We made the same kind of choice. The screens "
+     "show the refund and ask for confirmation, but the decision about the refund percent belongs only to "
+     "_cancel on the server, because it needs the booking, the time and the caller's role, and because the "
+     "screens could be bypassed.")
 
 
 def component(name, pspec, interface_text, interface_rows, flow_steps, hierarchy, class_diagram, activity,
@@ -1784,6 +1867,11 @@ para("This part shows how the classes work together while the program runs. As t
      "sequence diagram for each main use case. The numbers on the arrows show the order of the calls.")
 h(3, "3.3.1 Interaction Diagrams")
 
+para("Lecture 4 separates system sequence diagrams, where the whole system is one box talking to the "
+     "actors, from design sequence diagrams, where the modules inside the system talk to each other. The "
+     "diagrams below are design sequence diagrams: each lifeline is a real module or screen of Rihla, and "
+     "each message is a real function call or HTTP request. The lecture also suggests one sequence diagram "
+     "for each main use case, which is what we tried to give here.")
 SEQUENCES = [
     ("40_seq_signup", "Sequence diagram: sign-up of a staff account",
      "A staff sign-up is the longest version of sign-up, so we show that one. The client loads the venue list "
@@ -1835,6 +1923,9 @@ para(f"A booking moves through a few states (Figure {f}). It starts as Confirmed
      "there it is checked in by staff, cancelled under the refund rules, or it simply expires when its date "
      "passes. Checked in and Expired are not stored in the database. They are worked out from the ticket "
      "and the date each time the booking is read.")
+para("Lecture 4 says that a sequence diagram covers one use case, while a statechart describes one object "
+     "across several use cases. The booking is a good example. Its life is touched by booking, check-in, "
+     "cancellation and reviews, which are four different use cases with four different actors.")
 uml("12_state_booking", "State diagram of a booking and its ticket", width=5.6)
 
 page_break()
@@ -2004,6 +2095,33 @@ code("python -m unittest discover -s tests")
 para("Next to the automated tests, we went through the demo script in README.md role by role after filling "
      "the database with dummy_data.ps1.")
 
+para("Lecture 5 separates verification ('are we building the product right?') from validation ('are we "
+     "building the right product?'). Most of our automated tests are verification: they check the code "
+     "against the rules we wrote down, such as the refund steps. The demo script is closer to validation, "
+     "because it walks through each role's real tasks the way a user would.")
+para("We also followed the testing strategy from Lecture 7, which moves from testing in the small to testing "
+     "in the large:")
+bullets([
+    ("Unit testing: ", "single functions such as refund_percent_for, split_refund and ssn_error are called "
+     "directly with chosen inputs."),
+    ("Integration testing: ", "ApiAccountGuardTests and StaffVenueTests go through the Flask app with "
+     "app.test_client(), so the endpoint, the guard and the data function are tested together. This is "
+     "close to the use-based testing from the lecture, where the classes of one use case are integrated."),
+    ("System testing: ", "the full app with the server, the client and the seeded database, following the "
+     "demo script."),
+    ("Acceptance testing: ", "the final demo in front of the instructor is our acceptance test. We have not "
+     "done it yet at the time of writing."),
+    ("Regression testing: ", "after adding a feature we ran the whole suite again, so the old behaviour was "
+     "checked too. The suite grew to 70 tests this way."),
+    ("Static testing: ", "before submitting we read through the code again to find mistakes (the 'Final "
+     "audit' commit in our history). This is the review and walkthrough kind of static testing from the "
+     "lecture."),
+])
+para("One fault from our own history shows the difference Lecture 8 makes between an error, a fault and a "
+     "failure. While cleaning up the interface, we removed some helper labels (the error). Two "
+     "places in the code still used those labels (the fault). Nothing happened until a user opened those "
+     "screens, which then crashed (the failure). The final audit found and fixed both. It taught us to check "
+     "for names that are used but no longer defined after any interface change.")
 h(2, "6.1 Classes of tests")
 tests = [
     ("Unit testing (white box)", "Each rule should work on its own, including at its limits.",
@@ -2060,6 +2178,50 @@ table(["Test case", "Input", "Expected response"], [
     ["Banned user", "Login and booking after a ban", "Both answered with 403"],
     ["Self ban", "Admin bans their own email", "Refused"],
 ], "Expected responses", widths=[1.6, 2.1, 2.8], font=SMALL_TABLE_PT)
+
+para("Boundary value analysis:", bold=True, keep=True)
+para("Lecture 7 says that defects like to hide at the edges between equivalence classes, so for each edge we "
+     "test the value on the boundary and the values just below and just above it. Our refund test is a "
+     "direct example: test_refund_policy_steps checks exactly 48 hours (100%), one minute less (50%), exactly "
+     "24 hours (50%) and one minute less again (refused).")
+table(["Input", "Boundary values tested or expected", "Expected result"], [
+    ["Hours before start (booker cancels)", "48:00, 47:59, 24:00, 23:59", "100%, 50%, 50%, refused"],
+    ["Guests per customer booking", "0, 1, 10, 11", "refused, ok, ok, refused"],
+    ["Event capacity", "0, 1, 5000, 5001", "refused, ok, ok, refused"],
+    ["Rating", "-0.5, 0, 5, 5.5", "refused, ok, ok, refused"],
+    ["SSN length", "15, 16, 17 digits", "refused, ok, refused"],
+    ["Support subject / message length", "2 and 3 / 9 and 10 characters", "refused and ok"],
+    ["Open support tickets per customer", "2 open (third allowed), 3 open (fourth refused)", "ok, refused"],
+    ["Cancel reason", "300 and 301 characters", "ok, refused"],
+], "Boundary values", widths=[2.1, 2.5, 1.9], font=SMALL_TABLE_PT)
+para("Decision table for the refund policy:", bold=True, keep=True)
+para("The refund rules combine several conditions, which is exactly the kind of business logic Lecture 7 "
+     "tests with a decision table. A dash means the condition does not matter for that rule.")
+table(["", "R1", "R2", "R3", "R4", "R5", "R6", "R7"], [
+    ["Event already started?", "Y", "N", "N", "N", "N", "N", "N"],
+    ["Ticket still Valid?", "-", "N", "Y", "Y", "Y", "Y", "Y"],
+    ["Vendor or admin?", "-", "-", "Y", "N", "N", "N", "Y"],
+    ["Reason given?", "-", "-", "Y", "-", "-", "-", "N"],
+    ["Hours left", "-", "-", "-", "48 or more", "24 to 48", "under 24", "-"],
+    ["Action: refuse", "X", "X", "", "", "", "X", "X"],
+    ["Action: refund 100%", "", "", "X", "X", "", "", ""],
+    ["Action: refund 50%", "", "", "", "", "X", "", ""],
+], "Decision table for _cancel()", widths=[1.9, 0.6, 0.6, 0.6, 0.85, 0.8, 0.75, 0.6],
+    font=SMALL_TABLE_PT)
+para("White-box testing with basis paths:", bold=True, keep=True)
+para("For white-box testing, Lecture 7 uses McCabe's cyclomatic complexity, V(G) = number of decisions + 1, "
+     "as the number of independent paths that need a test. refund_percent_for has two decisions (48 hours "
+     "or more, 24 hours or more), so V(G) = 3 and there are three basis paths: return 100, return 50 and "
+     "return nothing. The four checks in test_refund_policy_steps cover all three paths, and also the "
+     "boundaries between them. We did not measure statement or branch coverage with a tool for the whole "
+     "project, so we cannot give a coverage percentage.")
+code("""
+refund_percent_for(start, now)            decision nodes: 2
+  1  hours_left = start - now              V(G) = 2 + 1 = 3
+  2  if hours_left >= 48 -> return 100      path A: 1, 2, return 100
+  3  if hours_left >= 24 -> return 50       path B: 1, 2, 3, return 50
+  4  return None                            path C: 1, 2, 3, 4
+""")
 
 para("Validation and error messages:", bold=True, keep=True)
 para("A large part of our testing was making sure that wrong input gives a clear message instead of a crash. "
@@ -2129,6 +2291,47 @@ bullets([
      "password hashing is slow on purpose."),
 ])
 
+h(3, "Software measurement")
+para("Lecture 9 says that measuring size and complexity is the basis for judging quality. We measured our own "
+     "code with the radon tool for Python, on 31 October 2026. Lines of code (LOC) count everything, and "
+     "source lines (SLOC) leave out blank lines and docstrings.")
+table(["Part", "LOC", "SLOC", "Comment lines"], [
+    ["Server (server/)", "2,536", "1,895", "150"],
+    ["Client (src/)", "7,123", "5,441", "286"],
+    ["Tests (tests/)", "1,009", "810", "37"],
+    ["Total", "10,668", "8,146", "473"],
+], "Size of the code", widths=[2.4, 1.3, 1.3, 1.5], font=SMALL_TABLE_PT)
+para("The lecture also warns that LOC measures length, not real size or effort, so we also looked at "
+     "complexity. Over the 434 functions in the client and the server, the average cyclomatic complexity is "
+     "3.8. 361 functions have a complexity of 5 or less, 40 are between 6 and 10, and 33 are above 10. "
+     "McCabe suggests keeping every module under 10, so those 33 are our weak spots. Most of them are long "
+     "functions that build a whole screen, such as show_event_screen (47) and open_event_form (28), and "
+     "init_db (37), which creates and upgrades every table. Splitting them into smaller functions would be "
+     "the first refactoring we would do. In the server logic, the most complex functions are "
+     "validate_maps_url (20), create_report (18), _book (15) and _cancel (14). Note that radon also counts "
+     "'and' and 'or' as decisions, so its numbers are a little higher than a hand count of the if "
+     "statements.")
+para("As a small example of Halstead's metrics from the same lecture, refund_percent_for has 4 distinct "
+     "operators and 9 distinct operands (n1 = 4, n2 = 9), used 5 and 10 times (N1 = 5, N2 = 10). That gives "
+     "a vocabulary of 13, a length of 15, a volume of about 55.5, a difficulty of about 2.2 and an effort of "
+     "about 123, which confirms that this key function is short and easy to reason about.")
+para("Finally, we made a rough function point count (Lecture 9) of Rihla as it is built, using the average "
+     "weight for every item. We counted each server endpoint that changes data as an external input, each "
+     "read endpoint that only returns stored data as an external inquiry, the read endpoints that calculate "
+     "something (capacity, demand, today's schedule, ratings) and the PDF receipt as external outputs, and "
+     "each database table as an internal logical file. Rihla has no external interface files, because it "
+     "does not read data kept by another system.")
+table(["Function type", "Count", "Average weight", "Points"], [
+    ["External inputs (EI)", "33", "4", "132"],
+    ["External outputs (EO)", "5", "5", "25"],
+    ["External inquiries (EQ)", "28", "4", "112"],
+    ["Internal logical files (ILF)", "13", "10", "130"],
+    ["External interface files (EIF)", "0", "7", "0"],
+    ["Unadjusted function points (UFP)", "", "", "399"],
+], "Function point count (unadjusted)", widths=[2.6, 1.0, 1.4, 1.5], font=SMALL_TABLE_PT)
+para("We did not apply the 14 adjustment factors, because rating them honestly would need a person outside "
+     "the team, so 399 is the unadjusted size.")
+
 h(2, "6.4 Identification of critical components")
 para("These are the parts we test most carefully, because a mistake there costs someone money, a seat or "
      "their trust in the app:")
@@ -2156,6 +2359,30 @@ table(["Team member", "Part of this document"], [
     ["Omar Arif", "Section 5 Restrictions, limitations, and constraints"],
     ["Oumar Ibrahim", "Section 6 Testing issues"],
 ], "Who wrote which part", widths=[2.2, 4.3])
+
+h(1, "References")
+para("Course material of Software Engineering (course 366), University of Sharjah, used in this report:")
+bullets([
+    "Lecture 1: Introduction.",
+    "Lecture 2: Domain Analysis and Modeling (UML, coupling and cohesion, use cases, class and state diagrams).",
+    "Lecture 3: Project Management and Communication, and Software Configuration Management.",
+    "Lecture 4: Object Oriented Design Basics (sequence diagrams, assigning responsibilities, statecharts).",
+    "Lecture 5: Software Life-Cycle Processes.",
+    "Lecture 6: Requirements Engineering, and Software Architecture.",
+    "Lecture 7: Software Testing (strategy, black-box and white-box testing).",
+    "Lecture 8: Software Quality Assurance.",
+    "Lecture 9: Software Metrics and Measurements, and COSMIC-FFP.",
+])
+para("Books referenced by the lectures:")
+bullets([
+    "Marsic, I. (2020). Software Engineering.",
+    "Sommerville, I. (2015). Software Engineering, 10th edition. Pearson.",
+    "Bruegge, B. and Dutoit, A. H. Object-Oriented Software Engineering: Using UML, Patterns, and Java. "
+    "Pearson.",
+    "Pressman, R. Software Engineering: A Practitioner's Approach, 5th edition. McGraw-Hill.",
+])
+para("Tools used for this document: PlantUML, Mermaid and Graphviz for the diagrams, radon for the code "
+     "metrics, python-docx and Microsoft Word for the document.")
 
 h(1, "Appendix A: Server endpoint reference")
 para("This is the full list of endpoints in server/server.py. The Guard column says what the server checks "
