@@ -5,7 +5,7 @@ from .dispatch_view import DispatchView
 
 class DispatcherWelcomeScreen(BaseWelcomeScreen):
     def __init__(self, root, email):
-        super().__init__(root, email, "Dispatcher")
+        BaseWelcomeScreen.__init__(self, root, email, "Dispatcher")
         self.root = root
         self.email = email
 
@@ -16,6 +16,7 @@ class DispatcherWelcomeScreen(BaseWelcomeScreen):
         self.add_nav_button("Fleet Maintenance", self.vehicle_view.build_fleet_management_content, icon="wrench")
         self.add_nav_button("Event Dispatch", self.dispatch_view.build_dispatch_content, icon="truck")
 
+        # start on the register page
         self.vehicle_view.build_register_content()
 
 

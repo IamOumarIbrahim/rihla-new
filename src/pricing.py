@@ -1,14 +1,12 @@
-"""Prices, VAT and currency conversion.
-
-Every price in the database is stored in AED. Other currencies are only used
-for display, using the fixed rates below.
-"""
+# prices, VAT and currency
+# all prices in the database are in AED, the other currencies are only for showing
+# with the fixed rates below
 
 VAT_RATE = 0.05
 
 DEFAULT_CURRENCY = "AED"
 
-# How much 1 AED is worth in each currency (indicative fixed rates).
+# what 1 AED is in each currency (fixed rates)
 CURRENCY_RATES = {
     "AED": 1.0,
     "USD": 0.2723,
@@ -16,32 +14,50 @@ CURRENCY_RATES = {
     "GBP": 0.2150,
 }
 
-CURRENCIES = list(CURRENCY_RATES)
+CURRENCIES = []
+for c in CURRENCY_RATES:
+    CURRENCIES.append(c)
 
 
 def normalize_currency(code):
-    code = (code or "").strip().upper()
-    return code if code in CURRENCY_RATES else DEFAULT_CURRENCY
+    if code:
+        code = code.strip().upper()
+    else:
+        code = ""
+    if code in CURRENCY_RATES:
+        return code
+    return DEFAULT_CURRENCY
 
 
+# (base, vat, total) in AED rounded to 2 decimals
 def vat_breakdown(base_aed):
-    """Returns (base, vat, total) in AED, rounded to 2 decimals."""
-    base = round(float(base_aed or 0), 2)
+    if not base_aed:
+        base_aed = 0
+    base = round(float(base_aed), 2)
     vat = round(base * VAT_RATE, 2)
-    return base, vat, round(base + vat, 2)
+    total = round(base + vat, 2)
+    return base, vat, total
 
 
+# (base, vat, total) of a refund of percent% of a total that has VAT in it
+# vat = total - base
 def refund_breakdown(total_aed, percent):
-    """(base, vat, total) of a refund of percent% of a VAT-inclusive total. VAT is refunded in proportion."""
-    total = round(float(total_aed or 0) * percent / 100, 2)
+    if not total_aed:
+        total_aed = 0
+    total = round(float(total_aed) * percent / 100, 2)
     base = round(total / (1 + VAT_RATE), 2)
-    return base, round(total - base, 2), total
+    vat = round(total - base, 2)
+    return base, vat, total
 
 
 def convert(amount_aed, currency):
-    return round(float(amount_aed or 0) * CURRENCY_RATES[normalize_currency(currency)], 2)
+    if not amount_aed:
+        amount_aed = 0
+    rate = CURRENCY_RATES[normalize_currency(currency)]
+    return round(float(amount_aed) * rate, 2)
 
 
 def format_money(amount_aed, currency=DEFAULT_CURRENCY):
     currency = normalize_currency(currency)
-    return f"{convert(amount_aed, currency):,.2f} {currency}"
+    amount = convert(amount_aed, currency)
+    return format(amount, ",.2f") + " " + currency

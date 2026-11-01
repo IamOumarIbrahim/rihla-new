@@ -1,17 +1,13 @@
-"""
-icons.py  –  Lucide icon loader for Tkinter
-
-Downloads SVG files from the lucide-static CDN on first use and caches them
-to assets/icons/. Renders them with tksvg (a native Tk SVG extension).
-
-Usage:
-    from icons import get_icon
-    img = get_icon("search", size=20, color="#2c3e50")   # returns tksvg.SvgImage
-    tk.Label(parent, image=img).pack()
-    # Keep a reference to img to prevent GC: widget.image = img
-
-All icon names are from https://lucide-animated.com/  (lucide-static package).
-"""
+# loads lucide icons for tkinter
+# it gets the svg files from the lucide-static cdn the first time and saves them in assets/icons/
+# then tksvg draws them
+#
+#   from icons import get_icon
+#   img = get_icon("search", size=20, color="#2c3e50")
+#   tk.Label(parent, image=img).pack()
+#   keep img somewhere (widget.image = img) or it disapears
+#
+# icon names are from https://lucide-animated.com/  (lucide-static package)
 
 import os
 import re
@@ -23,22 +19,20 @@ try:
 except ImportError:
     _TKSVG_AVAILABLE = False
 
-# ── paths ────────────────────────────────────────────────────────────────────
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 _ICONS_DIR = os.path.join(_ROOT, "assets", "icons")
 os.makedirs(_ICONS_DIR, exist_ok=True)
 
 _CDN = "https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/{name}.svg"
 
-# Set to True to fetch missing icons from the CDN. False = never touch the network.
+# True = get missing icons from the cdn, False = never use the network
 ALLOW_DOWNLOADS = False
 
-# ── in-process cache so the same (name, size, color) is created only once ────
-_cache: dict[tuple, object] = {}
+# so the same (name, size, color) is only made once
+_cache = {}
 
 
-# ---- emoji mode -------------------------------------------------------------
-# True = show emoji next to labels instead of SVG icons (no downloads, no tksvg).
+# True = emoji next to the labels instead of svg icons (no downloads and no tksvg)
 USE_EMOJI = True
 
 EMOJI = {
@@ -90,69 +84,55 @@ EMOJI = {
 }
 
 
-def emoji(name: str) -> str:
-    """Emoji for an icon name (empty string if emoji mode is off or the name is unknown)."""
-    return EMOJI.get(name, "") if USE_EMOJI else ""
+# emoji for an icon name ("" if emoji mode is off or the name is unknown)
+def emoji(name):
+    if not USE_EMOJI:
+        return ""
+    return EMOJI.get(name, "")
 
 
-def _svg_path(name: str) -> str:
-    return os.path.join(_ICONS_DIR, f"{name}.svg")
+def _svg_path(name):
+    return os.path.join(_ICONS_DIR, name + ".svg")
 
 
-def _download(name: str) -> str:
-    """Download icon SVG from CDN if not already cached on disk. Returns local path."""
+# downloads the svg from the cdn if we dont have it yet, gives back the local path
+def _download(name):
     path = _svg_path(name)
     if not os.path.exists(path):
         if not ALLOW_DOWNLOADS:
-            raise FileNotFoundError(f"Icon '{name}' is not cached and downloads are disabled.")
+            raise FileNotFoundError("Icon '" + name + "' is not cached and downloads are disabled.")
         url = _CDN.format(name=name)
         try:
             urllib.request.urlretrieve(url, path)
         except Exception as exc:
-            # Return None-safe fallback path
-            raise FileNotFoundError(f"Could not download lucide icon '{name}': {exc}")
+            raise FileNotFoundError("Could not download lucide icon '" + name + "': " + str(exc))
     return path
 
 
-def _recolor_svg(svg_text: str, color: str) -> str:
-    """Inject stroke color into an SVG string (Lucide icons use stroke, not fill)."""
-    # Replace existing stroke attributes on the root <svg> tag
-    svg_text = re.sub(
-        r'(<svg[^>]*)\bstroke="[^"]*"',
-        lambda m: m.group(1) + f'stroke="{color}"',
-        svg_text,
-        count=1,
-    )
-    # If no stroke attribute at root level yet, add it
-    if f'stroke="{color}"' not in svg_text:
-        svg_text = re.sub(
-            r"(<svg\b)",
-            rf'\1 stroke="{color}"',
-            svg_text,
-            count=1,
-        )
+# puts the stroke color in the svg (lucide icons use stroke not fill)
+def _recolor_svg(svg_text, color):
+    # change the stroke that is already on the <svg> tag
+    svg_text = re.sub(r'(<svg[^>]*)\bstroke="[^"]*"', r'\1stroke="' + color + '"', svg_text, count=1)
+    # no stroke there yet so add one
+    if ('stroke="' + color + '"') not in svg_text:
+        svg_text = re.sub(r"(<svg\b)", r'\1 stroke="' + color + '"', svg_text, count=1)
     return svg_text
 
 
-def _set_size(svg_text: str, size: int) -> str:
-    """Override width/height on the <svg> tag."""
-    svg_text = re.sub(r'(<svg[^>]*)\bwidth="[^"]*"', lambda m: m.group(1) + f'width="{size}"', svg_text, count=1)
-    svg_text = re.sub(r'(<svg[^>]*)\bheight="[^"]*"', lambda m: m.group(1) + f'height="{size}"', svg_text, count=1)
-    if f'width="{size}"' not in svg_text:
-        svg_text = re.sub(r"(<svg\b)", rf'\1 width="{size}" height="{size}"', svg_text, count=1)
+# sets width and height on the <svg> tag
+def _set_size(svg_text, size):
+    size = str(size)
+    svg_text = re.sub(r'(<svg[^>]*)\bwidth="[^"]*"', r'\1width="' + size + '"', svg_text, count=1)
+    svg_text = re.sub(r'(<svg[^>]*)\bheight="[^"]*"', r'\1height="' + size + '"', svg_text, count=1)
+    if ('width="' + size + '"') not in svg_text:
+        svg_text = re.sub(r"(<svg\b)", r'\1 width="' + size + '" height="' + size + '"', svg_text, count=1)
     return svg_text
 
 
-def get_icon(name: str, size: int = 18, color: str = "#2c3e50", master=None):
-    """Return a tksvg.SvgImage (or None if tksvg unavailable / download failed).
-
-    Parameters
-    ----------
-    name    : Lucide icon name, e.g. 'search', 'log-out', 'shopping-cart'
-    size    : pixel size (square)
-    color   : stroke color as hex string
-    master  : Tkinter widget/root needed by tksvg (usually the root window)
-    """
+# gives back a tksvg.SvgImage or None (no tksvg or the download failed)
+# name is the lucide name like 'search' or 'log-out', size in pixels (square), color is a hex string
+# master is the tk widget tksvg needs (normally the root)
+def get_icon(name, size=18, color="#2c3e50", master=None):
     if USE_EMOJI:
         return None
 
@@ -170,13 +150,13 @@ def get_icon(name: str, size: int = 18, color: str = "#2c3e50", master=None):
         return None
 
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            svg_text = f.read()
+        f = open(path, "r", encoding="utf-8")
+        svg_text = f.read()
+        f.close()
 
         svg_text = _recolor_svg(svg_text, color)
         svg_text = _set_size(svg_text, size)
 
-        # Write patched SVG to a temp string accepted by tksvg
         img = tksvg.SvgImage(data=svg_text, master=master, scaletowidth=size)
         _cache[key] = img
         return img

@@ -10,11 +10,11 @@ def main():
     root = tk.Tk()
     root.title("Rihla")
 
-    # Always launch maximized
+    # always open the window maximized
     try:
-        root.state("zoomed")              # Windows / macOS
+        root.state("zoomed")  # windows / mac
     except tk.TclError:
-        root.attributes("-zoomed", True)  # Linux
+        root.attributes("-zoomed", True)  # linux
 
     navigate.show_login(root)
     root.mainloop()

@@ -17,9 +17,12 @@ from ui import clear_window
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
+# uae mobile number without +971, it has to be 9 digits (spaces are ok)
 def _valid_phone(value):
-    """UAE mobile number without the +971 prefix: exactly 9 digits (spaces allowed)."""
-    digits = re.sub(r"\s+", "", value)
+    digits = ""
+    for c in value:
+        if not c.isspace():
+            digits = digits + c
     return digits.isascii() and digits.isdigit() and len(digits) == 9
 
 _IMAGE_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "assets", "background.jpg"))
@@ -29,7 +32,7 @@ if os.path.exists(_IMAGE_PATH):
         _raw_bg_image = Image.open(_IMAGE_PATH)
         _raw_bg_image.load()
     except OSError:
-        _raw_bg_image = None  # Broken image file: fall back to the plain dark panel
+        _raw_bg_image = None  # broken picture, just use the dark panel
 
 _bg_photo = None
 
@@ -44,10 +47,16 @@ def _draw_scene(canvas, w, h):
     if _raw_bg_image:
         img_w, img_h = _raw_bg_image.size
 
-        # Scale to cover the canvas without stretching, then crop the overflow from the center
-        scale = max(w / img_w, h / img_h)
-        new_w = max(int(img_w * scale), w)
-        new_h = max(int(img_h * scale), h)
+        # scale to cover the canvas (no stretching) and cut the extra from the middle
+        scale = w / img_w
+        if h / img_h > scale:
+            scale = h / img_h
+        new_w = int(img_w * scale)
+        if new_w < w:
+            new_w = w
+        new_h = int(img_h * scale)
+        if new_h < h:
+            new_h = h
         resized_img = _raw_bg_image.resize((new_w, new_h), Image.Resampling.LANCZOS)
         left = (new_w - w) // 2
         top = (new_h - h) // 2
@@ -56,14 +65,17 @@ def _draw_scene(canvas, w, h):
     else:
         canvas.config(bg=t.DARK)
 
-    # Logo in place of the title text; fall back to plain text if the image is missing
+    # logo instead of the title, if the logo file is missing just write the text
     if not draw_logo(canvas, w, h, h * 0.20 + 25):
         canvas.create_text(w / 2, h * 0.20, text="Rihla", fill="white", font=(t.FONT, 46, "bold"))
 
 
 def _build_brand_panel(parent):
     canvas = tk.Canvas(parent, bg=t.DARK, highlightthickness=0)
-    canvas.bind("<Configure>", lambda e: _draw_scene(canvas, e.width, e.height))
+
+    def on_resize(event):
+        _draw_scene(canvas, event.width, event.height)
+    canvas.bind("<Configure>", on_resize)
     return canvas
 
 
@@ -73,8 +85,15 @@ def _make_field(parent, label_text, show=""):
     field.pack(fill=tk.X)
     entry = tk.Entry(field, font=(t.FONT, 11), bd=0, relief="flat", bg=t.FIELD_BG, fg=t.TEXT, insertbackground=t.TEXT, show=show)
     entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=10, ipady=7)
-    entry.bind("<FocusIn>", lambda e: field.config(highlightbackground=t.PRIMARY))
-    entry.bind("<FocusOut>", lambda e: field.config(highlightbackground=t.BORDER))
+
+    def focus_in(event):
+        field.config(highlightbackground=t.PRIMARY)
+
+    def focus_out(event):
+        field.config(highlightbackground=t.BORDER)
+
+    entry.bind("<FocusIn>", focus_in)
+    entry.bind("<FocusOut>", focus_out)
     return field, entry
 
 
@@ -99,7 +118,8 @@ def show_create_account_screen(root):
     tk.Label(form, text="Create Account", font=(t.FONT, 22, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(anchor="w")
     tk.Label(form, text="Fill in your details to get started", font=(t.FONT, 10), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", pady=(2, 10))
 
-    # Account type: customers sign up as before; every other role must also give a 16-digit SSN.
+    # Account type
+    # customers sign up like before, all the other roles also need a 16 digit ssn
     role_row = tk.Frame(form, bg=t.CARD_BG)
     role_row.pack(fill=tk.X, pady=(2, 0))
     tk.Label(role_row, text="ACCOUNT TYPE", font=(t.FONT, 9, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT)
@@ -111,12 +131,13 @@ def show_create_account_screen(root):
     role_menu.pack(side=tk.RIGHT)
 
     ssn_section = tk.Frame(form, bg=t.CARD_BG)
-    tk.Label(ssn_section, text=f"SSN ({SSN_LENGTH} DIGITS)", font=(t.FONT, 9, "bold"),
+    tk.Label(ssn_section, text="SSN (" + str(SSN_LENGTH) + " DIGITS)", font=(t.FONT, 9, "bold"),
              bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", pady=(8, 3))
     ssn_boxes = DigitBoxes(ssn_section, groups=4, group_size=4, font_size=12, box_width=1)
     ssn_boxes.pack(anchor="w")
 
-    # Staff work at one existing venue and name that venue's manager (no manager account is needed).
+    # staff work at one venue that already exists and give the email of its manager
+    # (the manager doesnt need an account)
     staff_section = tk.Frame(form, bg=t.CARD_BG)
     venue_row = tk.Frame(staff_section, bg=t.CARD_BG)
     venue_row.pack(fill=tk.X, pady=(8, 0))
@@ -125,16 +146,24 @@ def show_create_account_screen(root):
         venues = get_all_venues()
     except ConnectionError:
         venues = []
-    venue_ids = {f"{v['name']}, {v['address']}": v["id"] for v in venues}
+    venue_ids = {}  # "name, address" -> id
+    for v in venues:
+        venue_ids[v["name"] + ", " + v["address"]] = v["id"]
+    venue_choices = []
+    for name in venue_ids:
+        venue_choices.append(name)
+    if len(venue_choices) == 0:
+        venue_choices = ["No venues available"]
     venue_var = tk.StringVar(value="Choose your venue")
-    venue_menu = tk.OptionMenu(venue_row, venue_var, *(venue_ids or ["No venues available"]))
+    venue_menu = tk.OptionMenu(venue_row, venue_var, *venue_choices)
     venue_menu.config(font=(t.FONT, 10), bg=t.FIELD_BG, fg=t.TEXT, activebackground=t.FIELD_BG, relief="flat", bd=0,
                       highlightthickness=1, highlightbackground=t.BORDER, anchor="w", cursor="hand2", width=30)
     venue_menu["menu"].config(font=(t.FONT, 10))
     venue_menu.pack(side=tk.RIGHT)
-    _, manager_entry = _make_field(staff_section, "VENUE MANAGER EMAIL")
+    manager_field, manager_entry = _make_field(staff_section, "VENUE MANAGER EMAIL")
 
-    def on_role_change(*_):
+    # shows or hides the ssn and staff parts when the account type changes
+    def on_role_change(name, index, mode):
         if role_var.get() == "Customer":
             ssn_boxes.set("")
             ssn_section.pack_forget()
@@ -147,7 +176,8 @@ def show_create_account_screen(root):
 
     role_var.trace_add("write", on_role_change)
 
-    _, reg_email = _make_field(form, "EMAIL")
+    # Email
+    email_field, reg_email = _make_field(form, "EMAIL")
     verification_status = {"email": False, "phone": False, "email_value": None, "phone_value": None}
 
     email_status = tk.Label(form, text="Email: Not Verified", font=(t.FONT, 9), bg=t.CARD_BG, fg="#e74c3c")
@@ -164,7 +194,7 @@ def show_create_account_screen(root):
         if email_exists(email_val):
             messagebox.showerror("Error", "Email already exists. Please log in.")
             return
-        
+
         win = tk.Toplevel(root)
         win.title("Verify Email")
         win.geometry("280x150")
@@ -183,6 +213,7 @@ def show_create_account_screen(root):
 
     tk.Button(form, text="Verify Email", font=(t.FONT, 9, "bold"), bg=t.PRIMARY, fg="white", bd=0, relief="flat", command=verify_email).pack(anchor="w", pady=2, ipady=4, ipadx=10)
 
+    # Phone
     tk.Label(form, text="PHONE NUMBER", font=(t.FONT, 9, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", pady=(8, 3))
     phone_box = tk.Frame(form, bg=t.FIELD_BG, highlightthickness=1, highlightbackground=t.BORDER)
     phone_box.pack(fill=tk.X)
@@ -220,16 +251,23 @@ def show_create_account_screen(root):
 
     tk.Button(form, text="Verify Phone", font=(t.FONT, 9, "bold"), bg=t.PRIMARY, fg="white", bd=0, relief="flat", command=verify_phone).pack(anchor="w", pady=2, ipady=4, ipadx=10)
 
+    # Password
     password_field, reg_pass = _make_field(form, "PASSWORD", show="*")
-    
-    # View password for 2 seconds function
+
+    # shows the password for 2 seconds
     def peek_password(entry_widget):
         entry_widget.config(show="")
-        root.after(2000, lambda: entry_widget.config(show="*"))
 
-    tk.Button(password_field, text="\U0001F441\uFE0F", bd=0, relief="flat", bg=t.FIELD_BG,
+        def hide_again():
+            entry_widget.config(show="*")
+        root.after(2000, hide_again)
+
+    def peek_pass():
+        peek_password(reg_pass)
+
+    tk.Button(password_field, text="\U0001F441️", bd=0, relief="flat", bg=t.FIELD_BG,
               activebackground=t.FIELD_BG, cursor="hand2",
-              command=lambda: peek_password(reg_pass)).pack(side=tk.RIGHT, padx=8)
+              command=peek_pass).pack(side=tk.RIGHT, padx=8)
 
     strength_label = tk.Label(form, text="Strength: Too weak", font=(t.FONT, 9), bg=t.CARD_BG, fg="#e74c3c")
     strength_label.pack(anchor="w", pady=2)
@@ -239,11 +277,27 @@ def show_create_account_screen(root):
         if not pwd:
             strength_label.config(text="Strength: Too weak", fg="#e74c3c")
             return
+
+        # one point for each: length 8+, a capital letter, a number, a symbol
         score = 0
-        if len(pwd) >= 8: score += 1
-        if any(c.isupper() for c in pwd): score += 1
-        if any(c.isdigit() for c in pwd): score += 1
-        if any(c in "!@#$%^&*()" for c in pwd): score += 1
+        if len(pwd) >= 8:
+            score += 1
+        has_upper = False
+        has_digit = False
+        has_symbol = False
+        for c in pwd:
+            if c.isupper():
+                has_upper = True
+            if c.isdigit():
+                has_digit = True
+            if c in "!@#$%^&*()":
+                has_symbol = True
+        if has_upper:
+            score += 1
+        if has_digit:
+            score += 1
+        if has_symbol:
+            score += 1
 
         if score <= 1:
             strength_label.config(text="Strength: Weak", fg="#e74c3c")
@@ -256,9 +310,12 @@ def show_create_account_screen(root):
 
     confirm_field, reg_confirm = _make_field(form, "CONFIRM PASSWORD", show="*")
 
-    tk.Button(confirm_field, text="\U0001F441\uFE0F", bd=0, relief="flat", bg=t.FIELD_BG,
+    def peek_confirm():
+        peek_password(reg_confirm)
+
+    tk.Button(confirm_field, text="\U0001F441️", bd=0, relief="flat", bg=t.FIELD_BG,
               activebackground=t.FIELD_BG, cursor="hand2",
-              command=lambda: peek_password(reg_confirm)).pack(side=tk.RIGHT, padx=8)
+              command=peek_confirm).pack(side=tk.RIGHT, padx=8)
 
     terms_var = tk.BooleanVar(value=False)
     terms_check = tk.Checkbutton(form, text="I agree to the Terms & Conditions", variable=terms_var, font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT, activebackground=t.CARD_BG)
@@ -271,7 +328,7 @@ def show_create_account_screen(root):
         phone = "+971 " + reg_phone.get().strip()
 
         if not pwd or pwd.strip().lower() in ["null", "none", "password", "123456"] or len(pwd) < MIN_PASSWORD_LENGTH:
-            messagebox.showerror("Error", f"Please choose a valid, secure password (at least {MIN_PASSWORD_LENGTH} characters).")
+            messagebox.showerror("Error", "Please choose a valid, secure password (at least " + str(MIN_PASSWORD_LENGTH) + " characters).")
             return
 
         if pwd != confirm:
@@ -282,7 +339,7 @@ def show_create_account_screen(root):
             messagebox.showerror("Error", "You must verify both email and phone.")
             return
 
-        # The person must not change the email or phone after the verification step.
+        # they cant change the email or phone after verifying it
         if email.lower() != verification_status["email_value"]:
             verification_status["email"] = False
             email_status.config(text="Email: Not Verified", fg="#e74c3c")
@@ -303,14 +360,20 @@ def show_create_account_screen(root):
             ssn = ssn_boxes.get()
             if not ssn_boxes.is_complete():
                 ssn_boxes.set_error(True)
-                messagebox.showerror("Error", f"{role} accounts must enter all {SSN_LENGTH} digits of their SSN.")
+                messagebox.showerror("Error", role + " accounts must enter all " + str(SSN_LENGTH) + " digits of their SSN.")
                 return
-            if len(set(ssn)) == 1:
+            # 16 times the same digit is not a real ssn
+            all_same = True
+            for c in ssn:
+                if c != ssn[0]:
+                    all_same = False
+            if all_same:
                 ssn_boxes.set_error(True)
                 messagebox.showerror("Error", "Please enter your real SSN.")
                 return
 
-        venue_id = manager_email = None
+        venue_id = None
+        manager_email = None
         if role == "Staff":
             venue_id = venue_ids.get(venue_var.get())
             manager_email = manager_entry.get().strip()
@@ -325,10 +388,15 @@ def show_create_account_screen(root):
         if ok:
             navigate.show_welcome(root, email)
         else:
-            messagebox.showerror("Error", message or "Registration failed. An account with this email already exists.")
+            if not message:
+                message = "Registration failed. An account with this email already exists."
+            messagebox.showerror("Error", message)
 
     reg_btn = tk.Button(form, text="Create Account", font=(t.FONT, 11, "bold"), bg=t.PRIMARY, fg="white", bd=0, relief="flat", command=handle_register)
     reg_btn.pack(fill=tk.X, pady=(15, 0), ipady=8)
 
-    back_btn = tk.Button(form, text="Back to Login", font=(t.FONT, 9), bg=t.CARD_BG, fg=t.PRIMARY, bd=0, relief="flat", command=lambda: navigate.show_login(root))
+    def go_back():
+        navigate.show_login(root)
+
+    back_btn = tk.Button(form, text="Back to Login", font=(t.FONT, 9), bg=t.CARD_BG, fg=t.PRIMARY, bd=0, relief="flat", command=go_back)
     back_btn.pack(pady=(10, 0))

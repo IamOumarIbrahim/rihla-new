@@ -7,10 +7,10 @@ import navigate
 
 def open_social_login(root, provider):
     social_window = tk.Toplevel(root)
-    social_window.title(f"Sign in with {provider}")
+    social_window.title("Sign in with " + provider)
     social_window.geometry("350x300")
 
-    tk.Label(social_window, text=f"Sign in with {provider}", font=("Arial", 14, "bold")).pack(pady=15)
+    tk.Label(social_window, text="Sign in with " + provider, font=("Arial", 14, "bold")).pack(pady=15)
     tk.Label(social_window, text="Email").pack(pady=2)
     email_entry = tk.Entry(social_window, width=25)
     email_entry.pack(pady=5)
@@ -29,8 +29,11 @@ def open_social_login(root, provider):
         ok, message = login(email, password)
         if ok:
             social_window.destroy()
-            navigate.show_welcome(root, get_user_email(email) or email)
+            saved_email = get_user_email(email)
+            if not saved_email:
+                saved_email = email
+            navigate.show_welcome(root, saved_email)
         else:
             messagebox.showerror("Error", message, parent=social_window)
 
-    tk.Button(social_window, text=f"Continue with {provider}", command=handle_social_login).pack(pady=20)
+    tk.Button(social_window, text="Continue with " + provider, command=handle_social_login).pack(pady=20)

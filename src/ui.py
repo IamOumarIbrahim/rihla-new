@@ -1,12 +1,14 @@
+# stops the timers, removes the mouse wheel bindings and destroys all the widgets
 def clear_window(root):
-    """Cancel timers, drop global mouse-wheel bindings, destroy all widgets."""
-    for job in root.tk.splitlist(root.tk.call('after', 'info')):
+    jobs = root.tk.splitlist(root.tk.call('after', 'info'))
+    for job in jobs:
         root.after_cancel(job)
 
-    # Welcome screens bind the mouse wheel globally; remove it so it cannot
-    # fire on a destroyed canvas after logout.
-    for sequence in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
-        root.unbind_all(sequence)
+    # the welcome screens bind the mouse wheel on everything, remove it so it
+    # doesnt fire on a canvas that is already destroyed after logout
+    root.unbind_all("<MouseWheel>")
+    root.unbind_all("<Button-4>")
+    root.unbind_all("<Button-5>")
 
     for widget in root.winfo_children():
         widget.destroy()

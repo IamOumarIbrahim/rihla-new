@@ -1,8 +1,7 @@
-"""Look shared by the app's data tables: bold headings, a gear on filterable columns,
-a checkbox first column, striped rows, and a small type/count summary table."""
+# the look of all our tables: bold headings, a gear on the columns you can filter,
+# a checkbox in the first column, rows in 2 colors and a small table with type and count
 import tkinter as tk
 from tkinter import ttk
-from collections import Counter
 import theme as t
 
 GEAR = "⚙"
@@ -20,12 +19,15 @@ TABLE_STYLE = "Dispatch.Treeview"
 def style_tables():
     style = ttk.Style()
     style.configure(TABLE_STYLE, rowheight=28, font=(t.FONT, 10), background=ROW_EVEN, fieldbackground=ROW_EVEN)
-    style.configure(f"{TABLE_STYLE}.Heading", font=(t.FONT, 10, "bold"), padding=(6, 6))
+    style.configure(TABLE_STYLE + ".Heading", font=(t.FONT, 10, "bold"), padding=(6, 6))
 
 
+# heading of a column you can filter: the name, a gear and a dot when the filter is on
 def heading_text(name, filter_active=False):
-    """Heading of a filterable column: the name, a gear, and a dot while a filter is on."""
-    return f"{name}  {GEAR}{' ●' if filter_active else ''}"
+    text = name + "  " + GEAR
+    if filter_active:
+        text = text + " ●"
+    return text
 
 
 def stripe_tags(tree):
@@ -35,11 +37,31 @@ def stripe_tags(tree):
     tree.tag_configure("total", background=ROW_TOTAL, font=(t.FONT, 10, "bold"))
 
 
+# small table with one row for every value and how many times it is there, and a total row
+# items is a list of values (like the vehicle type of every vehicle)
 def build_count_table(parent, items, label="Vehicle Type"):
-    """Mini table with one row per value and how often it appears, plus a total row.
-    `items` is a list of values (for example the vehicle type of every vehicle)."""
     style_tables()
-    counts = Counter(items)
+
+    # count every value
+    counts = {}
+    for value in items:
+        if value in counts:
+            counts[value] += 1
+        else:
+            counts[value] = 1
+
+    # sort by name (insertion sort, not case sensitive)
+    names = []
+    for value in counts:
+        names.append(value)
+    for i in range(1, len(names)):
+        temp = names[i]
+        j = i - 1
+        while j >= 0 and str(names[j]).lower() > str(temp).lower():
+            names[j + 1] = names[j]
+            j -= 1
+        names[j + 1] = temp
+
     frame = tk.Frame(parent, bg=t.CARD_BG, bd=1, relief="solid", highlightbackground=t.BORDER)
     tree = ttk.Treeview(frame, columns=("value", "count"), show="headings", height=len(counts) + 1,
                         style=TABLE_STYLE, selectmode="none")
@@ -48,8 +70,15 @@ def build_count_table(parent, items, label="Vehicle Type"):
     tree.heading("count", text="Count")
     tree.column("value", width=220, minwidth=220, anchor="w", stretch=False)
     tree.column("count", width=80, minwidth=80, anchor="center", stretch=False)
-    for i, (value, n) in enumerate(sorted(counts.items(), key=lambda kv: str(kv[0]).lower())):
-        tree.insert("", tk.END, values=(value, n), tags=("odd" if i % 2 else "even",))
-    tree.insert("", tk.END, values=("Total", sum(counts.values())), tags=("total",))
+
+    total = 0
+    for i in range(len(names)):
+        if i % 2:
+            tag = "odd"
+        else:
+            tag = "even"
+        tree.insert("", tk.END, values=(names[i], counts[names[i]]), tags=(tag,))
+        total = total + counts[names[i]]
+    tree.insert("", tk.END, values=("Total", total), tags=("total",))
     tree.pack()
     return frame

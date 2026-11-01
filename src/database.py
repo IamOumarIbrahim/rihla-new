@@ -1,12 +1,8 @@
-"""
-database.py – backward-compatibility shim.
-
-All data access now goes through the Rihla API server (localhost:5000).
-This module re-exports everything from api_client so existing imports
-(``from database import check_login``) continue to work without changes.
-"""
+# old database.py, now everything goes through the Rihla server (localhost:5000)
+# it just gives the functions from api_client so the old imports like
+# from database import check_login still work
 from api_client import *  # noqa: F401, F403
-from api_client import (  # explicit re-exports for IDE support
+from api_client import (
     check_login, login, get_role, get_user_email,
     get_all_users, set_user_banned, create_report, get_reports, resolve_report,
     register_user, update_password, email_exists, phone_exists,

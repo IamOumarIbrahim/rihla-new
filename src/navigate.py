@@ -1,8 +1,5 @@
-"""Single place to move between screens.
-
-Imports are done lazily inside each function so screens can call each other
-without circular-import problems.
-"""
+# going from one screen to another happens here
+# the imports are inside the functions so the screens can call each other without circular imports
 
 
 def show_login(root, prefilled_email=None, prefilled_password=None):

@@ -17,7 +17,7 @@ if os.path.exists(_IMAGE_PATH):
         _raw_bg_image = Image.open(_IMAGE_PATH)
         _raw_bg_image.load()
     except OSError:
-        _raw_bg_image = None  # Broken image file: fall back to the plain dark panel
+        _raw_bg_image = None  # broken picture, just use the dark panel
 
 _bg_photo = None
 
@@ -32,10 +32,16 @@ def _draw_scene(canvas, w, h):
     if _raw_bg_image:
         img_w, img_h = _raw_bg_image.size
 
-        # Scale to cover the canvas without stretching, then crop the overflow from the center
-        scale = max(w / img_w, h / img_h)
-        new_w = max(int(img_w * scale), w)
-        new_h = max(int(img_h * scale), h)
+        # scale to cover the canvas (no stretching) and cut the extra from the middle
+        scale = w / img_w
+        if h / img_h > scale:
+            scale = h / img_h
+        new_w = int(img_w * scale)
+        if new_w < w:
+            new_w = w
+        new_h = int(img_h * scale)
+        if new_h < h:
+            new_h = h
         resized_img = _raw_bg_image.resize((new_w, new_h), Image.Resampling.LANCZOS)
         left = (new_w - w) // 2
         top = (new_h - h) // 2
@@ -44,14 +50,17 @@ def _draw_scene(canvas, w, h):
     else:
         canvas.config(bg=t.DARK)
 
-    # Logo in place of the title text; fall back to plain text if the image is missing
+    # logo instead of the title, if the logo file is missing just write the text
     if not draw_logo(canvas, w, h, h * 0.20 + 25):
         canvas.create_text(w / 2, h * 0.20, text="Rihla", fill="white", font=(t.FONT, 46, "bold"))
 
 
 def _build_brand_panel(parent):
     canvas = tk.Canvas(parent, bg=t.DARK, highlightthickness=0)
-    canvas.bind("<Configure>", lambda e: _draw_scene(canvas, e.width, e.height))
+
+    def on_resize(event):
+        _draw_scene(canvas, event.width, event.height)
+    canvas.bind("<Configure>", on_resize)
     return canvas
 
 
@@ -61,8 +70,15 @@ def _make_field(parent, label_text, show=""):
     field.pack(fill=tk.X)
     entry = tk.Entry(field, font=(t.FONT, 11), bd=0, relief="flat", bg=t.FIELD_BG, fg=t.TEXT, insertbackground=t.TEXT, show=show)
     entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=10, ipady=8)
-    entry.bind("<FocusIn>", lambda e: field.config(highlightbackground=t.PRIMARY))
-    entry.bind("<FocusOut>", lambda e: field.config(highlightbackground=t.BORDER))
+
+    def focus_in(event):
+        field.config(highlightbackground=t.PRIMARY)
+
+    def focus_out(event):
+        field.config(highlightbackground=t.BORDER)
+
+    entry.bind("<FocusIn>", focus_in)
+    entry.bind("<FocusOut>", focus_out)
     return field, entry
 
 
@@ -87,20 +103,24 @@ def show_forgot_password_screen(root):
     tk.Label(form, text="Forgot Password", font=(t.FONT, 24, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(anchor="w")
     tk.Label(form, text="Enter your email to receive a verification code", font=(t.FONT, 10), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", pady=(2, 15))
 
-    _, email_entry = _make_field(form, "REGISTERED EMAIL")
+    email_field, email_entry = _make_field(form, "REGISTERED EMAIL")
 
     status_label = tk.Label(form, text="", font=(t.FONT, 9, "bold"), bg=t.CARD_BG)
     status_label.pack(anchor="w", pady=(8, 0))
 
+    # the code part only shows after the code was sent
     code_container = tk.Frame(form, bg=t.CARD_BG)
-    _, code_entry = _make_field(code_container, "ENTER 6-DIGIT CODE (HINT: 000000)", show="*")
+    code_field, code_entry = _make_field(code_container, "ENTER 6-DIGIT CODE (HINT: 000000)", show="*")
 
     def verify_code():
         code = code_entry.get().strip()
         if code == "000000":
             email = email_entry.get().strip()
             status_label.config(text="Code verified! Opening reset window...", fg="#27ae60")
-            root.after(1000, lambda: show_reset_password_window(root, email))
+
+            def open_reset():
+                show_reset_password_window(root, email)
+            root.after(1000, open_reset)
         else:
             messagebox.showerror("Error", "Invalid code. Please enter 000000.")
 
@@ -131,9 +151,12 @@ def show_forgot_password_screen(root):
     send_btn.pack(fill=tk.X, pady=(15, 0), ipady=9)
     t.add_hover(send_btn, t.PRIMARY, t.PRIMARY_HOVER)
 
+    def go_back():
+        navigate.show_login(root)
+
     back_btn = tk.Button(form, text="Back to Login", font=(t.FONT, 10, "bold"), bd=0, relief="flat",
                          bg=t.CARD_BG, fg=t.PRIMARY, activebackground=t.CARD_BG, cursor="hand2",
-                         command=lambda: navigate.show_login(root))
+                         command=go_back)
     back_btn.pack(anchor="w", pady=(20, 0))
 
     email_entry.focus_set()

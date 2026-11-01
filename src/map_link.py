@@ -1,4 +1,4 @@
-"""A venue name that works like a hyperlink: a click opens its Google Maps link in the default web browser."""
+# venue name that works like a link, clicking it opens the google maps link in the browser
 import tkinter as tk
 import webbrowser
 from tkinter import font as tkfont
@@ -11,7 +11,6 @@ LINK_HOVER = "#174ea6"
 
 
 def open_maps(url):
-    """Opens the link in the default web browser."""
     try:
         opened = webbrowser.open(url)
     except Exception:
@@ -20,22 +19,32 @@ def open_maps(url):
         messagebox.showerror("Cannot open link", "The default web browser could not be opened.")
 
 
+# label with the venue name, with a maps_url it looks like a link (blue, underlined, hand cursor)
+# without one its just normal text  the caller does pack() or grid() on it
 def venue_label(parent, text, maps_url, font=(t.FONT, 10), bg=None, fg=None, **kwargs):
-    """Returns a Label with the venue name.
-    With a maps_url it looks and works like a link (blue, underlined, hand cursor). Without one it is plain text.
-    The caller places it with pack() or grid(), like any other label.
-    """
     label = tk.Label(parent, text=text, font=font, bg=bg, fg=fg, **kwargs)
-    url = (maps_url or "").strip()
+    if maps_url:
+        url = maps_url.strip()
+    else:
+        url = ""
     if not url:
         return label
 
     link_font = tkfont.Font(font=font)
     link_font.configure(underline=True)
     label.config(font=link_font, fg=LINK_COLOR, cursor="hand2")
-    label._link_font = link_font  # keep a reference, so Tk does not delete the font
+    label._link_font = link_font  # keep it or tk deletes the font
 
-    label.bind("<Button-1>", lambda e: open_maps(url))
-    label.bind("<Enter>", lambda e: label.config(fg=LINK_HOVER))
-    label.bind("<Leave>", lambda e: label.config(fg=LINK_COLOR))
+    def on_click(event):
+        open_maps(url)
+
+    def on_enter(event):
+        label.config(fg=LINK_HOVER)
+
+    def on_leave(event):
+        label.config(fg=LINK_COLOR)
+
+    label.bind("<Button-1>", on_click)
+    label.bind("<Enter>", on_enter)
+    label.bind("<Leave>", on_leave)
     return label

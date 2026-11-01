@@ -3,7 +3,7 @@ from tkinter import messagebox, ttk
 import theme as t
 from database import create_report
 
-# Per role: (page subtitle, what can be reported, who it can be about, hint for the details box)
+# for every role: (subtitle of the page, what you can report, who its about, hint for the details box)
 REPORT_OPTIONS = {
     "Customer": (
         "Something went wrong on an experience or booking? Tell the admin team.",
@@ -42,6 +42,7 @@ REPORT_OPTIONS = {
 }
 
 
+# the Report page, every role except admin has it
 class ReportView:
     def __init__(self, parent_screen):
         self.root = parent_screen.root
@@ -53,18 +54,22 @@ class ReportView:
         for widget in self.scrollable_frame.winfo_children():
             widget.destroy()
 
-        subtitle, categories, offender_types, hint = REPORT_OPTIONS.get(self.role, REPORT_OPTIONS["Customer"])
+        if self.role in REPORT_OPTIONS:
+            options = REPORT_OPTIONS[self.role]
+        else:
+            options = REPORT_OPTIONS["Customer"]
+        subtitle = options[0]
+        categories = options[1]
+        offender_types = options[2]
+        hint = options[3]
 
         tk.Label(self.scrollable_frame, text="Submit a Report", font=(t.FONT, 22, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 5))
-        tk.Label(self.scrollable_frame, text=f"{subtitle} Reports go to the Rihla admin team only.",
+        tk.Label(self.scrollable_frame, text=subtitle + " Reports go to the Rihla admin team only.",
                  font=(t.FONT, 11), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=(0, 15))
 
         card = tk.Frame(self.scrollable_frame, bg=t.CARD_BG, bd=1, relief="solid", highlightbackground=t.BORDER)
         card.pack(fill=tk.X, padx=30, pady=5, ipady=12, ipadx=15)
         tk.Label(card, text="REPORT DETAILS", font=(t.FONT, 10, "bold"), bg=t.CARD_BG, fg=t.PRIMARY).pack(anchor="w", padx=10, pady=(8, 8))
-
-        def field_label(parent, text):
-            tk.Label(parent, text=text, font=(t.FONT, 9, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(anchor="w", pady=(8, 2))
 
         row = tk.Frame(card, bg=t.CARD_BG)
         row.pack(fill=tk.X, padx=10)
@@ -73,29 +78,30 @@ class ReportView:
         right = tk.Frame(row, bg=t.CARD_BG)
         right.pack(side=tk.LEFT)
 
-        field_label(left, "What are you reporting?")
+        tk.Label(left, text="What are you reporting?", font=(t.FONT, 9, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(anchor="w", pady=(8, 2))
         category_var = tk.StringVar(value="")
         ttk.Combobox(left, textvariable=category_var, values=categories, state="readonly", width=34, font=(t.FONT, 10)).pack(anchor="w")
 
-        field_label(right, "Who is this about?")
+        tk.Label(right, text="Who is this about?", font=(t.FONT, 9, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(anchor="w", pady=(8, 2))
         offender_var = tk.StringVar(value="")
         ttk.Combobox(right, textvariable=offender_var, values=offender_types, state="readonly", width=30, font=(t.FONT, 10)).pack(anchor="w")
 
         details = tk.Frame(card, bg=t.CARD_BG)
         details.pack(fill=tk.X, padx=10)
-        field_label(details, "Their email, if you know it (optional)")
+        tk.Label(details, text="Their email, if you know it (optional)", font=(t.FONT, 9, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(anchor="w", pady=(8, 2))
         offender_entry = tk.Entry(details, font=(t.FONT, 10), bg=t.FIELD_BG, relief="solid", bd=1, width=40)
         offender_entry.pack(anchor="w", ipady=3)
 
-        field_label(details, "Short summary")
+        tk.Label(details, text="Short summary", font=(t.FONT, 9, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(anchor="w", pady=(8, 2))
         subject_entry = tk.Entry(details, font=(t.FONT, 10), bg=t.FIELD_BG, relief="solid", bd=1)
         subject_entry.pack(fill=tk.X, ipady=3)
 
-        field_label(details, "What happened?")
+        tk.Label(details, text="What happened?", font=(t.FONT, 9, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(anchor="w", pady=(8, 2))
         tk.Label(details, text=hint, font=(t.FONT, 8), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w")
         description_text = tk.Text(details, font=(t.FONT, 10), bg=t.FIELD_BG, relief="solid", bd=1, height=7, wrap="word")
         description_text.pack(fill=tk.X, pady=(2, 0))
 
+        # sends it to the server, the server checks the fields
         def submit():
             result = create_report(self.email, category_var.get(), offender_var.get(), subject_entry.get(),
                                    description_text.get("1.0", tk.END), offender_entry.get())

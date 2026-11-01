@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
-"""
-start_client.py  –  Start the Rihla Tkinter client application.
-
-The API server (start_server.py) must already be running on localhost:5000.
-"""
+# starts the Rihla tkinter app
+# the server (start_server.py) has to be running on localhost:5000 already
 import subprocess
 import sys
 import os

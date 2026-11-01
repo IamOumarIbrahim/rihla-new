@@ -9,10 +9,10 @@ from contextlib import contextmanager
 
 from config import DEMO_ACCOUNTS, ADMIN_ROLE, SIGNUP_ROLES
 
+# the db file is always next to this file (server/users.db)
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "users.db")
-# Server-side: DB always lives next to this file (server/users.db)
 
-# Guests an event can take on one date when no vehicles are assigned to it.
+# guests an event can take on one date when it has no vehicles
 DEFAULT_EVENT_CAPACITY = 20
 MAX_EVENT_CAPACITY = 5000
 MAX_GUESTS_PER_BOOKING = 10
@@ -23,7 +23,7 @@ DEFAULT_CURRENCY = "AED"
 
 
 SSN_LENGTH = 16
-# Made-up SSNs for the non-customer demo accounts, so they follow the same rule as real sign-ups.
+# fake SSNs for the demo accounts that are not customers so they follow the same rule
 DEMO_SSNS = {
     "Vendor": "4000100020003001",
     "Staff": "4000100020003002",
@@ -33,51 +33,78 @@ DEMO_SSNS = {
 }
 
 
+# removes spaces and dashes from the ssn
 def clean_ssn(ssn):
-    """Drops spaces and dashes: '1234 5678-...' -> '12345678...'."""
-    return "".join(c for c in str(ssn or "") if c not in " -")
+    if not ssn:
+        text = ""
+    else:
+        text = str(ssn)
+    result = ""
+    for c in text:
+        if c != " " and c != "-":
+            result = result + c
+    return result
 
 
+# returns None if the ssn is ok for the role, otherwise the error message
+# customers dont need one
 def ssn_error(role, ssn):
-    """None when the SSN is fine for this role, otherwise the message to show. Customers need no SSN."""
     if role == "Customer":
         return None
     ssn = clean_ssn(ssn)
     if not ssn:
-        return f"A {SSN_LENGTH}-digit SSN is required for {role} accounts."
+        return "A " + str(SSN_LENGTH) + "-digit SSN is required for " + role + " accounts."
     if len(ssn) != SSN_LENGTH or not (ssn.isascii() and ssn.isdigit()):
-        return f"The SSN must be exactly {SSN_LENGTH} digits (0-9)."
-    if len(set(ssn)) == 1:
+        return "The SSN must be exactly " + str(SSN_LENGTH) + " digits (0-9)."
+
+    # all the same digit like 1111... is not a real ssn
+    same = True
+    for c in ssn:
+        if c != ssn[0]:
+            same = False
+    if same:
         return "Please enter your real SSN."
     return None
 
 
 STAFF_ROLE = "Staff"
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-# The demo staff account works at the venue of the demo ticket (New year dinner).
+# demo staff works at the venue of the demo ticket (New year dinner)
 DEMO_STAFF_VENUE = "Burj Khalifa"
 
 
+# fake manager email for a venue, Burj Khalifa -> manager.burjkhalifa@email.com
 def default_manager_email(venue_name):
-    """Made-up manager address for a venue: 'Burj Khalifa' -> 'manager.burjkhalifa@email.com'."""
-    slug = "".join(c for c in (venue_name or "").lower() if c.isascii() and c.isalnum()) or "venue"
-    return f"manager.{slug}@email.com"
+    if venue_name:
+        name = venue_name.lower()
+    else:
+        name = ""
+    slug = ""
+    for c in name:
+        if c.isascii() and c.isalnum():
+            slug = slug + c
+    if slug == "":
+        slug = "venue"
+    return "manager." + slug + "@email.com"
 
 
+# None when the venue exists and the manager email is ok, otherwise the message
 def staff_venue_error(venue_id, manager_email, conn=None):
-    """None when the venue exists and the manager email looks like an email, otherwise the message to show."""
     try:
         venue_id = int(venue_id)
     except (TypeError, ValueError):
         return "Please choose the venue you work at."
     if conn is None:
         with _connect() as conn:
-            exists = conn.execute("SELECT 1 FROM venues WHERE id = ?", (venue_id,)).fetchone()
+            exsits = conn.execute("SELECT 1 FROM venues WHERE id = ?", (venue_id,)).fetchone()
     else:
-        exists = conn.execute("SELECT 1 FROM venues WHERE id = ?", (venue_id,)).fetchone()
-    if not exists:
+        exsits = conn.execute("SELECT 1 FROM venues WHERE id = ?", (venue_id,)).fetchone()
+    if not exsits:
         return "That venue does not exist. Please choose one from the list."
-    manager_email = (manager_email or "").strip()
+    if manager_email:
+        manager_email = manager_email.strip()
+    else:
+        manager_email = ""
     if not manager_email:
         return "Please enter your venue manager's email."
     if not _EMAIL_RE.match(manager_email):
@@ -85,14 +112,14 @@ def staff_venue_error(venue_id, manager_email, conn=None):
     return None
 
 
+# local time of the server in the same format sqlite uses
 def _now():
-    """Server's local time, in the same text form SQLite timestamps use."""
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
+# opens the server db, commits at the end and always closes it
 @contextmanager
 def _connect():
-    """Server-side: always connects to the server's own DB_PATH."""
     conn = sqlite3.connect(DB_PATH)
     try:
         yield conn
@@ -102,24 +129,24 @@ def _connect():
 
 
 _HASH_PREFIX = "pbkdf2$"
-_HASH_ROUNDS = 200_000
+_HASH_ROUNDS = 200000
 
 
+# salted pbkdf2 hash so passwords are never saved as plain text
 def hash_password(password):
-    """Salted PBKDF2 hash, so passwords are never stored as plain text."""
     salt = secrets.token_hex(16)
     digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(salt), _HASH_ROUNDS)
-    return f"{_HASH_PREFIX}{_HASH_ROUNDS}${salt}${digest.hex()}"
+    return _HASH_PREFIX + str(_HASH_ROUNDS) + "$" + salt + "$" + digest.hex()
 
 
 def verify_password(password, stored):
     if not stored:
         return False
     if not stored.startswith(_HASH_PREFIX):
-        # Old row created before hashing was added (plain text).
+        # old row from before hashing was added (plain text)
         return hmac.compare_digest(password.encode("utf-8"), stored.encode("utf-8"))
     try:
-        _, rounds, salt, digest = stored.split("$")
+        prefix, rounds, salt, digest = stored.split("$")
         candidate = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(salt), int(rounds))
     except ValueError:
         return False
@@ -276,46 +303,57 @@ def init_db():
             )
         ''')
 
-        # Databases made before event capacity existed get the new column (old events start at 20).
-        event_columns = [row[1] for row in conn.execute("PRAGMA table_info(events)")]
-        if "capacity" not in event_columns:
-            conn.execute(f"ALTER TABLE events ADD COLUMN capacity INTEGER NOT NULL DEFAULT {DEFAULT_EVENT_CAPACITY}")
+        # Upgrading old databases:
 
-        # Venues made before map links existed get the new column (old venues start without a link).
-        venue_columns = [row[1] for row in conn.execute("PRAGMA table_info(venues)")]
+        # old events from before capacity existed get the column (they start at 20)
+        event_columns = []
+        for row in conn.execute("PRAGMA table_info(events)"):
+            event_columns.append(row[1])
+        if "capacity" not in event_columns:
+            conn.execute("ALTER TABLE events ADD COLUMN capacity INTEGER NOT NULL DEFAULT " + str(DEFAULT_EVENT_CAPACITY))
+
+        # old venues dont have a map link
+        venue_columns = []
+        for row in conn.execute("PRAGMA table_info(venues)"):
+            venue_columns.append(row[1])
         if "maps_url" not in venue_columns:
             conn.execute("ALTER TABLE venues ADD COLUMN maps_url TEXT NOT NULL DEFAULT ''")
 
-        # Support tickets made before tickets had to name an event start without one.
-        support_columns = [row[1] for row in conn.execute("PRAGMA table_info(support_tickets)")]
+        # old support tickets from before they had to name an event
+        support_columns = []
+        for row in conn.execute("PRAGMA table_info(support_tickets)"):
+            support_columns.append(row[1])
         if "event_title" not in support_columns:
             conn.execute("ALTER TABLE support_tickets ADD COLUMN event_title TEXT NOT NULL DEFAULT ''")
 
-        # Check bookings table for client_name column
-        # Users made before currency preferences existed default to AED.
-        user_columns = [row[1] for row in conn.execute("PRAGMA table_info(users)")]
+        # old users get AED as currency
+        user_columns = []
+        for row in conn.execute("PRAGMA table_info(users)"):
+            user_columns.append(row[1])
         if "currency" not in user_columns:
-            conn.execute(f"ALTER TABLE users ADD COLUMN currency TEXT NOT NULL DEFAULT '{DEFAULT_CURRENCY}'")
-        # Users made before sign-up dates and bans existed: the date is backfilled below, nobody starts banned.
+            conn.execute("ALTER TABLE users ADD COLUMN currency TEXT NOT NULL DEFAULT '" + DEFAULT_CURRENCY + "'")
+        # sign up date gets filled in further down, nobody starts banned
         if "created_at" not in user_columns:
             conn.execute("ALTER TABLE users ADD COLUMN created_at TEXT")
         if "banned" not in user_columns:
             conn.execute("ALTER TABLE users ADD COLUMN banned INTEGER NOT NULL DEFAULT 0")
             conn.execute("ALTER TABLE users ADD COLUMN banned_at TEXT")
             conn.execute("ALTER TABLE users ADD COLUMN banned_by TEXT")
-        # Non-customer accounts give a 16-digit SSN: only a salted hash and the last 4 digits are kept.
+        # non customers give a 16 digit ssn, we only keep a salted hash and the last 4 digits
         if "ssn_hash" not in user_columns:
             conn.execute("ALTER TABLE users ADD COLUMN ssn_hash TEXT")
             conn.execute("ALTER TABLE users ADD COLUMN ssn_last4 TEXT")
-        # Staff work at one venue and name its manager; staff made before this get one below.
+        # staff work at one venue and have a manager
         if "venue_id" not in user_columns:
             conn.execute("ALTER TABLE users ADD COLUMN venue_id INTEGER REFERENCES venues(id)")
             conn.execute("ALTER TABLE users ADD COLUMN manager_email TEXT")
 
-        booking_columns = [row[1] for row in conn.execute("PRAGMA table_info(bookings)")]
+        booking_columns = []
+        for row in conn.execute("PRAGMA table_info(bookings)"):
+            booking_columns.append(row[1])
         if "client_name" not in booking_columns:
             conn.execute("ALTER TABLE bookings ADD COLUMN client_name TEXT DEFAULT ''")
-        # Cancellation audit trail and refund (older databases get the columns here)
+        # cancel info and refund
         if "cancelled_at" not in booking_columns:
             conn.execute("ALTER TABLE bookings ADD COLUMN cancelled_at TEXT")
             conn.execute("ALTER TABLE bookings ADD COLUMN cancelled_by TEXT")
@@ -338,6 +376,7 @@ def init_db():
         ''')
         conn.execute("CREATE INDEX IF NOT EXISTS idx_cart_partner ON partner_cart(partner_email)")
 
+        # Default data
         cursor = conn.cursor()
 
         cursor.execute("SELECT COUNT(*) FROM vehicle_types")
@@ -353,9 +392,9 @@ def init_db():
 
         cursor.execute("SELECT COUNT(*) FROM venues")
         if cursor.fetchone()[0] == 0:
-            conn.execute("INSERT INTO venues (name, address, vendor_email) VALUES (?, ?, ?)", 
+            conn.execute("INSERT INTO venues (name, address, vendor_email) VALUES (?, ?, ?)",
                          ("Burj Khalifa", "Dubai Downtown, Dubai", "vendor@email.com"))
-            conn.execute("INSERT INTO venues (name, address, vendor_email) VALUES (?, ?, ?)", 
+            conn.execute("INSERT INTO venues (name, address, vendor_email) VALUES (?, ?, ?)",
                          ("Dubai Desert Conservation Reserve", "Al Ain Road, Dubai", "vendor@email.com"))
 
         cursor.execute("SELECT COUNT(*) FROM vendor_categories")
@@ -395,7 +434,7 @@ def init_db():
                 ("1234567890123456", "New year dinner", "customer@email.com", "Valid")
             )
 
-        # Link the demo ticket to a real booking, so "My Bookings" has something to show.
+        # link the demo ticket to a real booking so My Bookings shows something
         demo_code = "1234567890123456"
         demo_ticket = conn.execute("SELECT 1 FROM tickets WHERE ticket_code = ?", (demo_code,)).fetchone()
         demo_booked = conn.execute("SELECT 1 FROM bookings WHERE ticket_code = ?", (demo_code,)).fetchone()
@@ -404,17 +443,22 @@ def init_db():
             "WHERE e.title = 'New year dinner'"
         ).fetchone()
         if demo_ticket and not demo_booked and demo_event:
+            demo_time = demo_event[2]
+            if not demo_time:
+                demo_time = "23:00"
             conn.execute(
                 "INSERT INTO bookings (customer_email, event_id, event_title, venue_name, booking_date, event_time, "
                 "guests, total_price, ticket_code, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Confirmed')",
-                ("customer@email.com", demo_event[0], demo_event[1], demo_event[3], "2026-12-31", demo_event[2] or "23:00", 2, 1000, demo_code),
+                ("customer@email.com", demo_event[0], demo_event[1], demo_event[3], "2026-12-31", demo_time, 2, 1000, demo_code),
             )
 
-        # Fix the wrong address that older versions saved for the first venue.
+        # older versions saved a wrong address for the first venue
         conn.execute("UPDATE venues SET address = 'Dubai Downtown, Dubai' WHERE address = 'Dubai Downtown, Dubai, Sharjah'")
 
-        # The demo accounts on the login screen must really exist in the database.
-        for demo_role, (demo_email, demo_password) in DEMO_ACCOUNTS.items():
+        # the demo accounts on the login screen have to really exist
+        for demo_role in DEMO_ACCOUNTS:
+            demo_email = DEMO_ACCOUNTS[demo_role][0]
+            demo_password = DEMO_ACCOUNTS[demo_role][1]
             exists = conn.execute("SELECT 1 FROM users WHERE lower(email) = ?", (demo_email.lower(),)).fetchone()
             if not exists:
                 conn.execute(
@@ -428,8 +472,8 @@ def init_db():
                     (hash_password(demo_ssn), demo_ssn[-4:], demo_email.lower()),
                 )
 
-        # Accounts without a sign-up date (made before it was recorded): use their first booking or
-        # support ticket, the earliest sign of the account we have, otherwise the time of this upgrade.
+        # accounts with no sign up date get the date of their first booking or support ticket
+        # if there is none then just the time of this upgrade
         undated = conn.execute("SELECT rowid, email FROM users WHERE created_at IS NULL OR created_at = ''").fetchall()
         for rowid, user_email in undated:
             first_seen = conn.execute(
@@ -438,27 +482,39 @@ def init_db():
                 "UNION ALL SELECT created_at FROM support_tickets WHERE lower(customer_email) = lower(?))",
                 (user_email, user_email),
             ).fetchone()[0]
-            conn.execute("UPDATE users SET created_at = ? WHERE rowid = ?", (first_seen or _now(), rowid))
+            if not first_seen:
+                first_seen = _now()
+            conn.execute("UPDATE users SET created_at = ? WHERE rowid = ?", (first_seen, rowid))
 
-        # Staff without a venue (made before venues were assigned, or whose venue was deleted): the demo
-        # staff account goes to the demo ticket's venue, anyone else to the first venue; the manager email
-        # is a made-up address for that venue until they change it in Settings.
+        # staff without a venue: the demo staff goes to the venue of the demo ticket and everyone
+        # else to the first venue  the manager email is made up until they change it in Settings
         venues = conn.execute("SELECT id, name FROM venues ORDER BY id").fetchall()
         if venues:
-            demo_venue = next((v for v in venues if v[1] == DEMO_STAFF_VENUE), venues[0])
+            demo_venue = venues[0]
+            for v in venues:
+                if v[1] == DEMO_STAFF_VENUE:
+                    demo_venue = v
+                    break
             demo_staff_email = DEMO_ACCOUNTS[STAFF_ROLE][0].lower()
             unassigned = conn.execute(
                 "SELECT rowid, lower(email) FROM users WHERE role = ? AND "
                 "(venue_id IS NULL OR venue_id NOT IN (SELECT id FROM venues))", (STAFF_ROLE,)
             ).fetchall()
             for rowid, user_email in unassigned:
-                venue = demo_venue if user_email == demo_staff_email else venues[0]
+                if user_email == demo_staff_email:
+                    venue = demo_venue
+                else:
+                    venue = venues[0]
                 conn.execute("UPDATE users SET venue_id = ? WHERE rowid = ?", (venue[0], rowid))
-            names = dict(venues)
-            for rowid, venue_id in conn.execute(
+
+            names = {}
+            for v in venues:
+                names[v[0]] = v[1]
+            no_manager = conn.execute(
                 "SELECT rowid, venue_id FROM users WHERE role = ? AND (manager_email IS NULL OR manager_email = '')",
                 (STAFF_ROLE,),
-            ).fetchall():
+            ).fetchall()
+            for rowid, venue_id in no_manager:
                 conn.execute("UPDATE users SET manager_email = ? WHERE rowid = ?",
                              (default_manager_email(names.get(venue_id)), rowid))
 
@@ -466,45 +522,72 @@ def init_db():
 def register_user(email, password, role="Customer", phone=None, ssn=None, venue_id=None, manager_email=None):
     if role not in SIGNUP_ROLES:
         role = "Customer"
-    email = (email or "").strip().lower()
+    if email:
+        email = email.strip().lower()
+    else:
+        email = ""
     if not email or not password or email_exists(email) or ssn_error(role, ssn):
         return False
     if role == STAFF_ROLE:
         if staff_venue_error(venue_id, manager_email):
             return False
-        venue_id, manager_email = int(venue_id), manager_email.strip()
+        venue_id = int(venue_id)
+        manager_email = manager_email.strip()
     else:
-        venue_id, manager_email = None, None
-    ssn = clean_ssn(ssn) if role != "Customer" else ""
+        venue_id = None
+        manager_email = None
+
+    if role != "Customer":
+        ssn = clean_ssn(ssn)
+    else:
+        ssn = ""
+    ssn_hash = None
+    last4 = None
+    if ssn:
+        ssn_hash = hash_password(ssn)
+        last4 = ssn[-4:]
+
     try:
         with _connect() as conn:
             conn.execute(
                 "INSERT INTO users (email, password, role, phone, created_at, ssn_hash, ssn_last4, venue_id, manager_email) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (email, hash_password(password), role, phone, _now(),
-                 hash_password(ssn) if ssn else None, ssn[-4:] if ssn else None, venue_id, manager_email),
+                (email, hash_password(password), role, phone, _now(), ssn_hash, last4, venue_id, manager_email),
             )
         return True
     except sqlite3.IntegrityError:
         return False
 
 
+# the venue of a staff account (not banned) with the manager email, or None
 def get_staff_venue(email):
-    """The venue a (not banned) staff account works at, with its manager email, or None."""
+    if email:
+        email = email.strip()
+    else:
+        email = ""
     with _connect() as conn:
         row = conn.execute(
             "SELECT v.id, v.name, v.address, v.maps_url, u.manager_email FROM users u JOIN venues v ON v.id = u.venue_id "
             "WHERE lower(u.email) = lower(?) AND u.role = ? AND u.banned = 0",
-            ((email or "").strip(), STAFF_ROLE),
+            (email, STAFF_ROLE),
         ).fetchone()
     if row is None:
         return None
-    return {"id": row[0], "name": row[1], "address": row[2], "maps_url": row[3] or "", "manager_email": row[4] or ""}
+    maps_url = row[3]
+    if not maps_url:
+        maps_url = ""
+    manager = row[4]
+    if not manager:
+        manager = ""
+    return {"id": row[0], "name": row[1], "address": row[2], "maps_url": maps_url, "manager_email": manager}
 
 
+# staff changes venue or manager email
 def set_staff_venue(email, venue_id, manager_email):
-    """A staff member moves to another venue and/or names a new manager. Returns {"success", "message"}."""
-    email = (email or "").strip()
+    if email:
+        email = email.strip()
+    else:
+        email = ""
     with _connect() as conn:
         row = conn.execute("SELECT role, banned FROM users WHERE lower(email) = lower(?)", (email,)).fetchone()
         if row is None or row[0] != STAFF_ROLE or row[1]:
@@ -517,9 +600,12 @@ def set_staff_venue(email, venue_id, manager_email):
     return {"success": True, "message": "Your venue and manager email were saved."}
 
 
+# 'ok', 'invalid' (wrong email or password) or 'banned' (password right but account banned)
 def login_status(email, password):
-    """'ok', 'invalid' (unknown email or wrong password) or 'banned' (right password, banned account)."""
-    email = (email or "").strip()
+    if email:
+        email = email.strip()
+    else:
+        email = ""
     with _connect() as conn:
         row = conn.execute(
             "SELECT email, password, banned FROM users WHERE lower(email) = lower(?)", (email,)
@@ -527,7 +613,7 @@ def login_status(email, password):
         if row is None or not verify_password(password, row[1]):
             return "invalid"
         if not row[1].startswith(_HASH_PREFIX):
-            # Upgrade an old plain-text password to a salted hash after a successful login.
+            # old plain text password, hash it now that the login worked
             conn.execute("UPDATE users SET password = ? WHERE email = ?", (hash_password(password), row[0]))
         if row[2]:
             return "banned"
@@ -539,25 +625,37 @@ def check_login(email, password):
 
 
 def is_admin(email):
+    if email:
+        email = email.strip()
+    else:
+        email = ""
     with _connect() as conn:
         row = conn.execute(
             "SELECT 1 FROM users WHERE lower(email) = lower(?) AND role = ? AND banned = 0",
-            ((email or "").strip(), ADMIN_ROLE),
+            (email, ADMIN_ROLE),
         ).fetchone()
     return row is not None
 
 
+# role of an account that exists and is not banned, otherwise None
 def active_role(email):
-    """The role of an existing, not banned account, or None (unknown email or banned)."""
+    if email:
+        email = email.strip()
+    else:
+        email = ""
     with _connect() as conn:
         row = conn.execute(
-            "SELECT role FROM users WHERE lower(email) = lower(?) AND banned = 0", ((email or "").strip(),)
+            "SELECT role FROM users WHERE lower(email) = lower(?) AND banned = 0", (email,)
         ).fetchone()
-    return None if row is None else (row[0] or "Customer")
+    if row is None:
+        return None
+    if row[0]:
+        return row[0]
+    return "Customer"
 
 
+# all accounts newest first, only for admins (None if not admin)
 def get_all_users(admin_email):
-    """Every account, newest sign-up first. Only an admin may list them (None otherwise)."""
     if not is_admin(admin_email):
         return None
     with _connect() as conn:
@@ -566,17 +664,43 @@ def get_all_users(admin_email):
             "FROM users u LEFT JOIN venues v ON v.id = u.venue_id "
             "ORDER BY u.created_at DESC, lower(u.email)"
         ).fetchall()
-    # Venue and manager email only mean something for staff; everyone else gets blanks.
-    return [{"email": r[0], "role": r[1] or "Customer", "created_at": r[2] or "", "banned": bool(r[3]),
-             "banned_at": r[4] or "", "banned_by": r[5] or "",
-             "venue_name": (r[6] or "") if r[1] == STAFF_ROLE else "",
-             "manager_email": (r[7] or "") if r[1] == STAFF_ROLE else ""} for r in rows]
+
+    users = []
+    for r in rows:
+        role = r[1]
+        if not role:
+            role = "Customer"
+        # venue and manager only make sense for staff
+        venue_name = ""
+        manager = ""
+        if r[1] == STAFF_ROLE:
+            if r[6]:
+                venue_name = r[6]
+            if r[7]:
+                manager = r[7]
+        user = {}
+        user["email"] = r[0]
+        user["role"] = role
+        user["created_at"] = r[2] or ""
+        user["banned"] = bool(r[3])
+        user["banned_at"] = r[4] or ""
+        user["banned_by"] = r[5] or ""
+        user["venue_name"] = venue_name
+        user["manager_email"] = manager
+        users.append(user)
+    return users
 
 
+# ban or unban an account, admins cant ban themselves or other admins
 def set_user_banned(admin_email, email, banned=True):
-    """Ban (or restore) an account. Admins cannot ban themselves or another admin."""
-    admin_email = (admin_email or "").strip()
-    email = (email or "").strip()
+    if admin_email:
+        admin_email = admin_email.strip()
+    else:
+        admin_email = ""
+    if email:
+        email = email.strip()
+    else:
+        email = ""
     if not is_admin(admin_email):
         return {"success": False, "message": "Only an admin can do this."}
     if email.lower() == admin_email.lower():
@@ -593,48 +717,85 @@ def set_user_banned(admin_email, email, banned=True):
         else:
             conn.execute("UPDATE users SET banned = 0, banned_at = NULL, banned_by = NULL WHERE lower(email) = lower(?)",
                          (email,))
-    return {"success": True, "message": f"{email} was {'banned' if banned else 'restored'}."}
+    if banned:
+        word = "banned"
+    else:
+        word = "restored"
+    return {"success": True, "message": email + " was " + word + "."}
 
 
+# gives back the email the way it is saved (letter case doesnt matter), or None
 def get_user_email(email):
-    """Returns the email exactly as stored (the typed letter case does not matter), or None."""
+    if email:
+        email = email.strip()
+    else:
+        email = ""
     with _connect() as conn:
-        row = conn.execute("SELECT email FROM users WHERE lower(email) = lower(?)", ((email or "").strip(),)).fetchone()
-    return row[0] if row else None
+        row = conn.execute("SELECT email FROM users WHERE lower(email) = lower(?)", (email,)).fetchone()
+    if row:
+        return row[0]
+    return None
 
 
 def get_role(email):
+    if email:
+        email = email.strip()
+    else:
+        email = ""
     with _connect() as conn:
-        row = conn.execute("SELECT role FROM users WHERE lower(email) = lower(?)", ((email or "").strip(),)).fetchone()
-    return row[0] if row and row[0] else "Customer"
+        row = conn.execute("SELECT role FROM users WHERE lower(email) = lower(?)", (email,)).fetchone()
+    if row and row[0]:
+        return row[0]
+    return "Customer"
 
 
 def get_currency(email):
+    if email:
+        email = email.strip()
+    else:
+        email = ""
     with _connect() as conn:
-        row = conn.execute("SELECT currency FROM users WHERE lower(email) = lower(?)", ((email or "").strip(),)).fetchone()
-    return row[0] if row and row[0] in CURRENCIES else DEFAULT_CURRENCY
+        row = conn.execute("SELECT currency FROM users WHERE lower(email) = lower(?)", (email,)).fetchone()
+    if row and row[0] in CURRENCIES:
+        return row[0]
+    return DEFAULT_CURRENCY
 
 
 def set_currency(email, currency):
-    currency = (currency or "").strip().upper()
+    if currency:
+        currency = currency.strip().upper()
+    else:
+        currency = ""
     if currency not in CURRENCIES:
         return False
+    if email:
+        email = email.strip()
+    else:
+        email = ""
     with _connect() as conn:
-        cursor = conn.execute("UPDATE users SET currency = ? WHERE lower(email) = lower(?)", (currency, (email or "").strip()))
+        cursor = conn.execute("UPDATE users SET currency = ? WHERE lower(email) = lower(?)", (currency, email))
     return cursor.rowcount > 0
 
 
 def update_password(email, new_password):
+    if email:
+        email = email.strip()
+    else:
+        email = ""
     with _connect() as conn:
         conn.execute(
             "UPDATE users SET password = ? WHERE lower(email) = lower(?)",
-            (hash_password(new_password), (email or "").strip()),
+            (hash_password(new_password), email),
         )
 
 
 def email_exists(email):
+    if email:
+        email = email.strip()
+    else:
+        email = ""
     with _connect() as conn:
-        row = conn.execute("SELECT 1 FROM users WHERE lower(email) = lower(?)", ((email or "").strip(),)).fetchone()
+        row = conn.execute("SELECT 1 FROM users WHERE lower(email) = lower(?)", (email,)).fetchone()
     return row is not None
 
 
@@ -644,9 +805,10 @@ def phone_exists(phone):
     return row is not None
 
 
-# --- Support Tickets ---
+# ====== Support Tickets ======
+
+# the ticket has to be about an event that is listed now or one the customer booked before
 def create_support_ticket(customer_email, subject, message, event_title=""):
-    """The ticket must be about an event: one that is listed now, or one the customer has booked before."""
     customer_email = (customer_email or "").strip()
     subject = (subject or "").strip()
     message = (message or "").strip()
@@ -677,7 +839,7 @@ def create_support_ticket(customer_email, subject, message, event_title=""):
         if open_count >= MAX_OPEN_SUPPORT_TICKETS:
             return {
                 "success": False,
-                "message": f"You already have {MAX_OPEN_SUPPORT_TICKETS} open tickets. Please wait for staff to reply.",
+                "message": "You already have " + str(MAX_OPEN_SUPPORT_TICKETS) + " open tickets. Please wait for staff to reply.",
             }
 
         cursor = conn.execute(
@@ -695,12 +857,14 @@ def get_support_tickets_by_customer(customer_email):
             "WHERE lower(customer_email) = lower(?) ORDER BY id DESC",
             ((customer_email or "").strip(),),
         ).fetchall()
-    return [{"id": r[0], "subject": r[1], "message": r[2], "status": r[3], "created_at": r[4], "event_title": r[5] or ""} for r in rows]
+    tickets = []
+    for r in rows:
+        tickets.append({"id": r[0], "subject": r[1], "message": r[2], "status": r[3], "created_at": r[4], "event_title": r[5] or ""})
+    return tickets
 
 
-# A support ticket belongs to the venue of the event it names. An event that has since been deleted is
-# found through its bookings (they keep the venue name). Old tickets that name no event are general
-# questions any staff member may answer.
+# a support ticket belongs to the venue of its event  if the event was deleted we find the venue
+# through the bookings (they keep the venue name)  old tickets with no event can be answered by any staff
 _TICKET_AT_VENUE = (
     "(t.event_title = '' OR t.event_title IS NULL "
     "OR EXISTS (SELECT 1 FROM events e WHERE e.title = t.event_title AND e.venue_id = :venue) "
@@ -716,46 +880,59 @@ def _staff_venue_id(staff_email):
             "SELECT venue_id FROM users WHERE lower(email) = lower(?) AND role = ? AND banned = 0 AND venue_id IS NOT NULL",
             ((staff_email or "").strip(), STAFF_ROLE),
         ).fetchone()
-    return row[0] if row else None
+    if row:
+        return row[0]
+    return None
 
 
+# oldest first so whoever waited the longest gets an answer first
+# with a venue_id only that venues tickets are returned
 def get_open_support_tickets(venue_id=None):
-    """Oldest first, so the longest waiting customer is answered first. venue_id keeps that venue's tickets."""
-    where = "t.status = 'Open'" + ("" if venue_id is None else f" AND {_TICKET_AT_VENUE}")
+    where = "t.status = 'Open'"
+    if venue_id is not None:
+        where = where + " AND " + _TICKET_AT_VENUE
     with _connect() as conn:
         rows = conn.execute(
             "SELECT t.id, t.customer_email, t.subject, t.message, t.created_at, t.event_title FROM support_tickets t "
-            f"WHERE {where} ORDER BY t.id", {"venue": venue_id}
+            "WHERE " + where + " ORDER BY t.id", {"venue": venue_id}
         ).fetchall()
-    return [{"id": r[0], "customer_email": r[1], "subject": r[2], "message": r[3], "created_at": r[4], "event_title": r[5] or ""} for r in rows]
+    tickets = []
+    for r in rows:
+        tickets.append({"id": r[0], "customer_email": r[1], "subject": r[2], "message": r[3], "created_at": r[4], "event_title": r[5] or ""})
+    return tickets
 
 
+# with a venue_id only a ticket of that venue can be resolved
 def resolve_support_ticket(ticket_id, staff_email, venue_id=None):
-    """venue_id: only a ticket for that venue can be resolved."""
     where = "id = :id AND status = 'Open'"
     if venue_id is not None:
-        where += f" AND id IN (SELECT t.id FROM support_tickets t WHERE {_TICKET_AT_VENUE})"
+        where = where + " AND id IN (SELECT t.id FROM support_tickets t WHERE " + _TICKET_AT_VENUE + ")"
     with _connect() as conn:
         updated = conn.execute(
-            f"UPDATE support_tickets SET status = 'Resolved', resolved_by = :staff, resolved_at = CURRENT_TIMESTAMP WHERE {where}",
+            "UPDATE support_tickets SET status = 'Resolved', resolved_by = :staff, resolved_at = CURRENT_TIMESTAMP WHERE " + where,
             {"staff": (staff_email or "").strip(), "id": ticket_id, "venue": venue_id},
         ).rowcount
     return bool(updated)
 
 
+# open tickets for the venue of this staff member, None if they arent staff at a venue
 def get_staff_support_tickets(staff_email):
-    """Open support tickets for the staff member's venue, or None if they are not staff at a venue."""
     venue_id = _staff_venue_id(staff_email)
-    return None if venue_id is None else get_open_support_tickets(venue_id)
+    if venue_id is None:
+        return None
+    return get_open_support_tickets(venue_id)
 
 
+# staff can only resolve tickets about events at their own venue
 def staff_resolve_support_ticket(ticket_id, staff_email):
-    """Staff resolve only tickets about their own venue's events."""
     venue_id = _staff_venue_id(staff_email)
-    return venue_id is not None and resolve_support_ticket(ticket_id, staff_email, venue_id)
+    if venue_id is None:
+        return False
+    return resolve_support_ticket(ticket_id, staff_email, venue_id)
 
 
-# --- Reports (any signed-in user except admins files one, admins resolve them) ---
+# ====== Reports ======
+# any signed in user except admins can send one, admins resolve them
 MAX_OPEN_REPORTS = 5
 
 
@@ -786,11 +963,14 @@ def create_report(reporter_email, category, offender_type, subject, description,
             "SELECT COUNT(*) FROM reports WHERE lower(reporter_email) = lower(?) AND status = 'Open'", (reporter_email,)
         ).fetchone()[0]
         if open_count >= MAX_OPEN_REPORTS:
-            return {"success": False, "message": f"You already have {MAX_OPEN_REPORTS} open reports. Please wait for an admin to review them."}
+            return {"success": False, "message": "You already have " + str(MAX_OPEN_REPORTS) + " open reports. Please wait for an admin to review them."}
+        reporter_role = reporter[1]
+        if not reporter_role:
+            reporter_role = "Customer"
         cursor = conn.execute(
             "INSERT INTO reports (reporter_email, reporter_role, category, offender_type, offender_email, subject, description, "
             "status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'Open', ?)",
-            (reporter[0], reporter[1] or "Customer", category, offender_type, offender_email, subject, description, _now()),
+            (reporter[0], reporter_role, category, offender_type, offender_email, subject, description, _now()),
         )
     return {"success": True, "message": "Report sent to the admin team.", "report_id": cursor.lastrowid}
 
@@ -799,16 +979,26 @@ _REPORT_FIELDS = ("id", "reporter_email", "reporter_role", "category", "offender
                   "description", "status", "created_at", "resolved_by", "resolved_at", "resolution")
 
 
+# all reports, the open ones first (oldest first) and then the resolved ones
 def get_reports(admin_email):
-    """All reports: open ones first (oldest first, so the longest waiting is handled first), then resolved ones."""
     if not is_admin(admin_email):
         return None
     with _connect() as conn:
         rows = conn.execute(
-            f"SELECT {', '.join(_REPORT_FIELDS)} FROM reports "
+            "SELECT id, reporter_email, reporter_role, category, offender_type, offender_email, subject, "
+            "description, status, created_at, resolved_by, resolved_at, resolution FROM reports "
             "ORDER BY status = 'Resolved', CASE WHEN status = 'Open' THEN id ELSE -id END"
         ).fetchall()
-    return [{k: (v if v is not None else "") for k, v in zip(_REPORT_FIELDS, r)} for r in rows]
+    reports = []
+    for r in rows:
+        report = {}
+        for i in range(len(_REPORT_FIELDS)):
+            if r[i] is not None:
+                report[_REPORT_FIELDS[i]] = r[i]
+            else:
+                report[_REPORT_FIELDS[i]] = ""
+        reports.append(report)
+    return reports
 
 
 def resolve_report(admin_email, report_id, resolution="Resolved"):

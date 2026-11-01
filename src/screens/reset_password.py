@@ -5,6 +5,7 @@ from config import MIN_PASSWORD_LENGTH
 from database import update_password
 import navigate
 
+
 def show_reset_password_window(root, email):
     reset_win = tk.Toplevel(root)
     reset_win.title("Reset Password")
@@ -12,11 +13,11 @@ def show_reset_password_window(root, email):
     reset_win.configure(bg=t.CARD_BG)
     reset_win.resizable(False, False)
 
-    # Center the popup window relative to root
+    # put the popup in the middle of the main window
     reset_win.update_idletasks()
     x = root.winfo_x() + (root.winfo_width() // 2) - (420 // 2)
     y = root.winfo_y() + (root.winfo_height() // 2) - (420 // 2)
-    reset_win.geometry(f"+{x}+{y}")
+    reset_win.geometry("+" + str(x) + "+" + str(y))
 
     form = tk.Frame(reset_win, bg=t.CARD_BG)
     form.pack(fill=tk.BOTH, expand=True, padx=40, pady=30)
@@ -24,31 +25,60 @@ def show_reset_password_window(root, email):
     tk.Label(form, text="Reset Password", font=(t.FONT, 20, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(anchor="w")
     tk.Label(form, text="Enter your new secure password below", font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", pady=(2, 20))
 
-    def _make_field(parent, label_text, show=""):
-        tk.Label(parent, text=label_text, font=(t.FONT, 9, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", pady=(10, 4))
-        field = tk.Frame(parent, bg=t.FIELD_BG, highlightthickness=1, highlightbackground=t.BORDER, highlightcolor=t.PRIMARY)
-        field.pack(fill=tk.X)
-        entry = tk.Entry(field, font=(t.FONT, 11), bd=0, relief="flat", bg=t.FIELD_BG, fg=t.TEXT, insertbackground=t.TEXT, show=show)
-        entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=10, ipady=8)
-        entry.bind("<FocusIn>", lambda e: field.config(highlightbackground=t.PRIMARY))
-        entry.bind("<FocusOut>", lambda e: field.config(highlightbackground=t.BORDER))
-        return field, entry
+    # new password field
+    tk.Label(form, text="NEW PASSWORD", font=(t.FONT, 9, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", pady=(10, 4))
+    new_field = tk.Frame(form, bg=t.FIELD_BG, highlightthickness=1, highlightbackground=t.BORDER, highlightcolor=t.PRIMARY)
+    new_field.pack(fill=tk.X)
+    new_pass_entry = tk.Entry(new_field, font=(t.FONT, 11), bd=0, relief="flat", bg=t.FIELD_BG, fg=t.TEXT, insertbackground=t.TEXT, show="*")
+    new_pass_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=10, ipady=8)
 
-    new_field, new_pass_entry = _make_field(form, "NEW PASSWORD", show="*")
-    
-    def peek_password(entry_widget):
-        entry_widget.config(show="")
-        reset_win.after(2000, lambda: entry_widget.config(show="*"))
+    def new_focus_in(event):
+        new_field.config(highlightbackground=t.PRIMARY)
 
-    tk.Button(new_field, text="\U0001F441\uFE0F", bd=0, relief="flat", bg=t.FIELD_BG,
+    def new_focus_out(event):
+        new_field.config(highlightbackground=t.BORDER)
+
+    new_pass_entry.bind("<FocusIn>", new_focus_in)
+    new_pass_entry.bind("<FocusOut>", new_focus_out)
+
+    # shows the password for 2 seconds
+    def peek_new():
+        new_pass_entry.config(show="")
+
+        def hide_again():
+            new_pass_entry.config(show="*")
+        reset_win.after(2000, hide_again)
+
+    tk.Button(new_field, text="\U0001F441️", bd=0, relief="flat", bg=t.FIELD_BG,
               activebackground=t.FIELD_BG, cursor="hand2",
-              command=lambda: peek_password(new_pass_entry)).pack(side=tk.RIGHT, padx=8)
+              command=peek_new).pack(side=tk.RIGHT, padx=8)
 
-    confirm_field, confirm_pass_entry = _make_field(form, "CONFIRM NEW PASSWORD", show="*")
+    # confirm field (same as above)
+    tk.Label(form, text="CONFIRM NEW PASSWORD", font=(t.FONT, 9, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", pady=(10, 4))
+    confirm_field = tk.Frame(form, bg=t.FIELD_BG, highlightthickness=1, highlightbackground=t.BORDER, highlightcolor=t.PRIMARY)
+    confirm_field.pack(fill=tk.X)
+    confirm_pass_entry = tk.Entry(confirm_field, font=(t.FONT, 11), bd=0, relief="flat", bg=t.FIELD_BG, fg=t.TEXT, insertbackground=t.TEXT, show="*")
+    confirm_pass_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=10, ipady=8)
 
-    tk.Button(confirm_field, text="\U0001F441\uFE0F", bd=0, relief="flat", bg=t.FIELD_BG,
+    def confirm_focus_in(event):
+        confirm_field.config(highlightbackground=t.PRIMARY)
+
+    def confirm_focus_out(event):
+        confirm_field.config(highlightbackground=t.BORDER)
+
+    confirm_pass_entry.bind("<FocusIn>", confirm_focus_in)
+    confirm_pass_entry.bind("<FocusOut>", confirm_focus_out)
+
+    def peek_confirm():
+        confirm_pass_entry.config(show="")
+
+        def hide_again():
+            confirm_pass_entry.config(show="*")
+        reset_win.after(2000, hide_again)
+
+    tk.Button(confirm_field, text="\U0001F441️", bd=0, relief="flat", bg=t.FIELD_BG,
               activebackground=t.FIELD_BG, cursor="hand2",
-              command=lambda: peek_password(confirm_pass_entry)).pack(side=tk.RIGHT, padx=8)
+              command=peek_confirm).pack(side=tk.RIGHT, padx=8)
 
     def handle_reset():
         new_pass = new_pass_entry.get()
@@ -63,7 +93,7 @@ def show_reset_password_window(root, email):
             return
 
         if len(new_pass) < MIN_PASSWORD_LENGTH:
-            messagebox.showerror("Error", f"Password must be at least {MIN_PASSWORD_LENGTH} characters.", parent=reset_win)
+            messagebox.showerror("Error", "Password must be at least " + str(MIN_PASSWORD_LENGTH) + " characters.", parent=reset_win)
             return
 
         update_password(email, new_pass)

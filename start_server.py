@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
-"""
-start_server.py  –  Start the Rihla API server.
-
-Run this BEFORE starting the Tkinter client.
-The server will stay running until you close it (Ctrl+C).
-"""
+# starts the Rihla API server
+# run this BEFORE the tkinter client, it keeps running until you stop it (Ctrl+C)
 import subprocess
 import sys
 import os

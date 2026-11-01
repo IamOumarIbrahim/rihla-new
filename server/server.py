@@ -1,15 +1,12 @@
-"""
-Rihla API Server – localhost Flask REST API
-Run: python server/server.py
-Serves on http://localhost:5000
-All data lives in server/users.db (the single source of truth).
-"""
+# Rihla API server (Flask) on localhost
+# run it with: python server/server.py  it serves on http://localhost:5000
+# all the data is in server/users.db
 
 import base64
 import os
 import sys
 
-# Make sure server/ modules resolve correctly when run from any cwd
+# so the server/ modules are found from any folder
 _SERVER_DIR = os.path.dirname(os.path.abspath(__file__))
 if _SERVER_DIR not in sys.path:
     sys.path.insert(0, _SERVER_DIR)
@@ -20,15 +17,16 @@ import database_events as events
 
 app = Flask(__name__)
 
-# -----------------------------------------------------------------------
-# Helpers
-# -----------------------------------------------------------------------
+# ====== Helpers ======
 
-def _ok(data=None, **kwargs):
+def _ok(data=None):
     payload = {"success": True}
     if data is not None:
-        payload.update(data if isinstance(data, dict) else {"data": data})
-    payload.update(kwargs)
+        if isinstance(data, dict):
+            for key in data:
+                payload[key] = data[key]
+        else:
+            payload["data"] = data
     return jsonify(payload), 200
 
 
@@ -36,20 +34,17 @@ def _err(message, status=400):
     return jsonify({"success": False, "message": message}), status
 
 
-def _blocked(email, *roles):
-    """An error response when the account is unknown, banned or (when roles are given) has the wrong role."""
+# error response if the account is unknown or banned, or has the wrong role (when needed_role is given)
+def _blocked(email, needed_role=None):
     role = core.active_role(email)
     if role is None:
         return _err("This account is unknown or has been banned.", 403)
-    if roles and role not in roles:
-        return _err(f"Only {' or '.join(roles)} accounts can do this.", 403)
+    if needed_role is not None and role != needed_role:
+        return _err("Only " + needed_role + " accounts can do this.", 403)
     return None
 
 
-# -----------------------------------------------------------------------
 # Auth
-# -----------------------------------------------------------------------
-
 @app.route("/api/auth/login", methods=["POST"])
 def login():
     body = request.get_json(silent=True) or {}
@@ -57,7 +52,10 @@ def login():
     password = body.get("password", "")
     status = core.login_status(email, password)
     if status == "ok":
-        return _ok({"email": core.get_user_email(email) or email, "role": core.get_role(email)})
+        stored_email = core.get_user_email(email)
+        if not stored_email:
+            stored_email = email
+        return _ok({"email": stored_email, "role": core.get_role(email)})
     if status == "banned":
         return _err("This account has been banned by an administrator.", 403)
     return _err("Invalid email or password.", 401)
@@ -68,10 +66,7 @@ def get_role(email):
     return _ok({"role": core.get_role(email)})
 
 
-# -----------------------------------------------------------------------
 # Users
-# -----------------------------------------------------------------------
-
 @app.route("/api/users/register", methods=["POST"])
 def register():
     body = request.get_json(silent=True) or {}
@@ -145,10 +140,7 @@ def get_user_email(email):
     return _err("Not found.", 404)
 
 
-# -----------------------------------------------------------------------
 # Admin
-# -----------------------------------------------------------------------
-
 @app.route("/api/admin/users")
 def admin_get_users():
     users = core.get_all_users(request.args.get("admin_email", ""))
@@ -193,10 +185,7 @@ def admin_resolve_report(report_id):
     return _err(result["message"])
 
 
-# -----------------------------------------------------------------------
 # Venues
-# -----------------------------------------------------------------------
-
 @app.route("/api/venues")
 def get_venues():
     return _ok({"venues": events.get_all_venues()})
@@ -237,10 +226,7 @@ def delete_venue(venue_id):
     return _err("Venue is in use by events or staff and cannot be deleted.")
 
 
-# -----------------------------------------------------------------------
 # Vendor Categories
-# -----------------------------------------------------------------------
-
 @app.route("/api/vendor_categories/<path:vendor_email>")
 def get_vendor_categories(vendor_email):
     return _ok({"categories": events.get_vendor_categories(vendor_email)})
@@ -261,10 +247,7 @@ def delete_vendor_category(category_id):
     return _ok({"message": "Deleted."})
 
 
-# -----------------------------------------------------------------------
 # Events
-# -----------------------------------------------------------------------
-
 @app.route("/api/events")
 def get_all_events():
     return _ok({"events": events.get_all_events()})
@@ -282,7 +265,7 @@ def get_events_by_venue(venue_id):
 
 @app.route("/api/events/today")
 def get_events_today():
-    # Only staff read the day's schedule, and only for the venue they work at.
+    # only staff see the schedule and only for their own venue
     schedule = events.get_staff_schedule(request.args.get("staff_email", ""))
     if schedule is None:
         return _err("Only staff assigned to a venue can see its schedule.", 403)
@@ -357,10 +340,7 @@ def count_active_bookings(event_id):
     return _ok({"count": events.count_active_bookings(event_id)})
 
 
-# -----------------------------------------------------------------------
 # Bookings
-# -----------------------------------------------------------------------
-
 @app.route("/api/bookings", methods=["POST"])
 def create_booking():
     body = request.get_json(silent=True) or {}
@@ -368,7 +348,7 @@ def create_booking():
     blocked = _blocked(email)
     if blocked:
         return blocked
-    # Partner booking rules (no per-booking guest cap) follow the account's role, not what the client says.
+    # partner rules (no guest limit) come from the role of the account not from what the client sends
     result = events.create_booking(
         email, body.get("event_id"),
         body.get("booking_date"), body.get("guests", 1),
@@ -430,10 +410,7 @@ def admin_cancel_booking(booking_id):
     return _err(result["message"])
 
 
-# -----------------------------------------------------------------------
 # Tickets
-# -----------------------------------------------------------------------
-
 @app.route("/api/tickets/verify", methods=["POST"])
 def verify_ticket():
     body = request.get_json(silent=True) or {}
@@ -444,10 +421,7 @@ def verify_ticket():
     return _err(result["message"])
 
 
-# -----------------------------------------------------------------------
 # Support Tickets
-# -----------------------------------------------------------------------
-
 @app.route("/api/support", methods=["POST"])
 def create_support_ticket():
     body = request.get_json(silent=True) or {}
@@ -470,7 +444,7 @@ def get_support_tickets_by_customer(email):
 
 @app.route("/api/support/open")
 def get_open_support_tickets():
-    # Staff only see questions about events at the venue they work at.
+    # staff only see questions about events at their venue
     tickets = core.get_staff_support_tickets(request.args.get("staff_email", ""))
     if tickets is None:
         return _err("Only staff assigned to a venue can read support tickets.", 403)
@@ -486,10 +460,7 @@ def resolve_support_ticket(ticket_id):
     return _err("Could not resolve (already resolved, not found, or not for your venue).")
 
 
-# -----------------------------------------------------------------------
 # Vehicles
-# -----------------------------------------------------------------------
-
 @app.route("/api/vehicle_types")
 def get_vehicle_types():
     return _ok({"vehicle_types": events.get_vehicle_types()})
@@ -532,10 +503,7 @@ def free_vehicle(vehicle_id):
     return _ok({"message": "Vehicle freed."})
 
 
-# -----------------------------------------------------------------------
 # Dispatch
-# -----------------------------------------------------------------------
-
 @app.route("/api/dispatch/<int:event_id>")
 def get_dispatches_by_event(event_id):
     return _ok({"dispatches": events.get_dispatches_by_event(event_id)})
@@ -548,10 +516,7 @@ def dispatch_vehicles():
     return _ok({"assigned": count})
 
 
-# -----------------------------------------------------------------------
 # Partner Cart
-# -----------------------------------------------------------------------
-
 @app.route("/api/cart/<path:partner_email>")
 def get_cart_items(partner_email):
     return _ok({"items": events.get_cart_items(partner_email)})
@@ -603,10 +568,7 @@ def checkout_cart(partner_email):
     return _err(result["message"])
 
 
-# -----------------------------------------------------------------------
-# Dispatch - vehicles assigned to one event
-# -----------------------------------------------------------------------
-
+# Dispatch: vehicles on one event
 @app.route("/api/dispatch/<int:event_id>/vehicles")
 def get_assigned_vehicles_for_event(event_id):
     with core._connect() as conn:
@@ -616,29 +578,25 @@ def get_assigned_vehicles_for_event(event_id):
             JOIN vehicles v ON ev.vehicle_id = v.id
             WHERE ev.event_id = ? AND ev.status = 'Assigned'
         ''', (event_id,)).fetchall()
-    vehicles = [
-        {"id": r[0], "license_number": r[1], "vehicle_type": r[2],
-         "location": r[3], "status": r[4], "auto_reassign_recurring": r[5]}
-        for r in rows
-    ]
+    vehicles = []
+    for r in rows:
+        vehicles.append({"id": r[0], "license_number": r[1], "vehicle_type": r[2],
+                         "location": r[3], "status": r[4], "auto_reassign_recurring": r[5]})
     return _ok({"vehicles": vehicles})
 
 
-# -----------------------------------------------------------------------
-# Event pictures (files in server/event_images/<event id>.jpg)
-# -----------------------------------------------------------------------
-
+# Event pictures (saved as server/event_images/<event id>.jpg)
 IMAGE_DIR = os.path.join(_SERVER_DIR, "event_images")
 os.makedirs(IMAGE_DIR, exist_ok=True)
 MAX_IMAGE_BYTES = 4 * 1024 * 1024
 
 
 def _image_path(event_id):
-    return os.path.join(IMAGE_DIR, f"{int(event_id)}.jpg")
+    return os.path.join(IMAGE_DIR, str(int(event_id)) + ".jpg")
 
 
 def _decode_image(b64_text):
-    """Returns JPEG bytes, or None when no picture was sent. Raises ValueError for bad data."""
+    # jpeg bytes, or None if no picture was sent  bad data raises ValueError
     if not b64_text:
         return None
     try:
@@ -676,10 +634,7 @@ def get_event_image(event_id):
     return resp
 
 
-# -----------------------------------------------------------------------
 # Reviews (My Experiences)
-# -----------------------------------------------------------------------
-
 @app.route("/api/experiences/customer/<path:email>")
 def get_my_experiences(email):
     return _ok({"experiences": events.get_my_experiences(email)})
@@ -688,7 +643,11 @@ def get_my_experiences(email):
 @app.route("/api/events/ratings")
 def get_event_ratings():
     ratings = events.get_event_ratings()
-    return _ok({"ratings": {str(event_id): info for event_id, info in ratings.items()}})
+    # json keys have to be strings
+    by_id = {}
+    for event_id in ratings:
+        by_id[str(event_id)] = ratings[event_id]
+    return _ok({"ratings": by_id})
 
 
 @app.route("/api/reviews", methods=["POST"])
@@ -706,10 +665,7 @@ def submit_review():
     return _err(result["message"])
 
 
-# -----------------------------------------------------------------------
-# Boot
-# -----------------------------------------------------------------------
-
+# ====== Start ======
 if __name__ == "__main__":
     core.init_db()
     print("Rihla API server running at http://localhost:5000")

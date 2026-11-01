@@ -2,7 +2,6 @@ import os
 from datetime import datetime
 import tkinter as tk
 from tkinter import messagebox, filedialog, ttk
-from collections import Counter
 from .users_welcome import BaseWelcomeScreen
 from .table_style import GEAR, TABLE_STYLE, style_tables, heading_text, stripe_tags
 from database import (
@@ -17,7 +16,7 @@ import icons as ic
 import event_images
 from map_link import venue_label
 
-# Columns of the bookings table: (key, heading, width, anchor, filterable)
+# columns of the bookings table: (key, heading, width, anchor, can filter)
 BOOKING_COLUMNS = [
     ("event", "Event", 200, "w", True),
     ("date", "Date", 100, "center", True),
@@ -28,15 +27,15 @@ BOOKING_COLUMNS = [
     ("refund", "Refunded (AED)", 120, "e", False),
     ("status", "Status", 110, "center", True),
 ]
-# Rows of these statuses get a text color; Confirmed and Checked in rows keep the normal text color.
+# these statuses get a text color, Confirmed and Checked in stay normal
 STATUS_COLORS = {"Expired": t.TEXT_MUTED, "Cancelled": "#c0392b"}
 
 
 class VendorWelcomeScreen(BaseWelcomeScreen):
     def __init__(self, root, email):
-        super().__init__(root, email, "Vendor")
+        BaseWelcomeScreen.__init__(self, root, email, "Vendor")
         self.root = root
-        self.booking_hidden = {}  # column key -> values hidden by its filter
+        self.booking_hidden = {}  # column key -> values hidden by the filter
 
         self.add_nav_button("My Events", self.build_vendor_content, icon="calendar")
         self.add_nav_button("Bookings", self.build_bookings_content, icon="ticket")
@@ -50,12 +49,12 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
         for widget in self.scrollable_frame.winfo_children():
             widget.destroy()
 
-        tk.Label(self.scrollable_frame, text=f"Welcome back, {self.username}!", font=(t.FONT, 22, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 5))
+        tk.Label(self.scrollable_frame, text="Welcome back, " + self.username + "!", font=(t.FONT, 22, "bold"), bg=t.PAGE_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 5))
 
         action_frame = tk.Frame(self.scrollable_frame, bg=t.PAGE_BG)
         action_frame.pack(fill=tk.X, padx=30, pady=10)
-        
-        add_btn = tk.Button(action_frame, text=f"{ic.emoji('plus')} Create New Event Listing", font=(t.FONT, 10, "bold"), bg=t.ACCENT, fg="white", relief="flat", command=self.open_add_event_modal)
+
+        add_btn = tk.Button(action_frame, text=ic.emoji("plus") + " Create New Event Listing", font=(t.FONT, 10, "bold"), bg=t.ACCENT, fg="white", relief="flat", command=self.open_add_event_modal)
         add_btn.pack(side=tk.LEFT, ipadx=15, ipady=8)
         t.add_hover(add_btn, t.ACCENT, "#e67e22")
 
@@ -72,52 +71,69 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
 
             top_row = tk.Frame(card, bg=t.CARD_BG)
             top_row.pack(fill=tk.X, padx=15, pady=5)
-            tk.Label(top_row, text=f"{ic.emoji('tag')} Category: {event['category']}", font=(t.FONT, 10, "bold"), bg=t.CARD_BG, fg=t.PRIMARY).pack(side=tk.LEFT)
+            tk.Label(top_row, text=ic.emoji("tag") + " Category: " + str(event['category']), font=(t.FONT, 10, "bold"), bg=t.CARD_BG, fg=t.PRIMARY).pack(side=tk.LEFT)
             tk.Label(top_row, text=event['price'], font=(t.FONT, 11, "bold"), bg=t.CARD_BG, fg=t.ACCENT).pack(side=tk.RIGHT)
 
             tk.Label(card, text=event['title'], font=(t.FONT, 14, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(anchor="w", padx=15, pady=2)
-            venue_display = event.get('venue_name') or 'Unknown Venue'
-            recur_suffix = f" ({event['recur_day']})" if event['is_recurring'] == "Recurring" and event['recur_day'] not in (None, "", "None", "N/A") else ""
+            venue_display = event.get('venue_name')
+            if not venue_display:
+                venue_display = 'Unknown Venue'
+            recur_suffix = ""
+            if event['is_recurring'] == "Recurring" and event['recur_day'] not in (None, "", "None", "N/A"):
+                recur_suffix = " (" + str(event['recur_day']) + ")"
             venue_row = tk.Frame(card, bg=t.CARD_BG)
             venue_row.pack(anchor="w", padx=15, pady=2)
             venue_label(venue_row, venue_display, event.get('maps_url'), font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT)
-            tk.Label(venue_row, text=f"  | {event['event_datetime']} |  {event['is_recurring']}{recur_suffix}", font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT)
+            when_text = "  | " + str(event['event_datetime']) + " |  " + str(event['is_recurring']) + recur_suffix
+            tk.Label(venue_row, text=when_text, font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT)
             cap = get_event_capacity(event['id'])
             if cap['vehicles']:
-                vehicle_count = sum(v['count'] for v in cap['vehicles'])
-                capacity_text = f"Capacity: {cap['total']} guests (seats of {vehicle_count} assigned vehicle(s))"
+                vehicle_count = 0
+                for v in cap['vehicles']:
+                    vehicle_count = vehicle_count + v['count']
+                capacity_text = "Capacity: " + str(cap['total']) + " guests (seats of " + str(vehicle_count) + " assigned vehicle(s))"
             else:
-                capacity_text = f" Capacity: {cap['total']} guests (no vehicles assigned)"
+                capacity_text = " Capacity: " + str(cap['total']) + " guests (no vehicles assigned)"
             tk.Label(card, text=capacity_text, font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=15, pady=2)
             tk.Label(card, text=event['desc'], font=(t.FONT, 10), bg=t.CARD_BG, fg=t.TEXT_MUTED, wraplength=600, justify="left").pack(anchor="w", padx=15, pady=5)
 
             btn_row = tk.Frame(card, bg=t.CARD_BG)
             btn_row.pack(anchor="w", padx=15, pady=(5, 10))
 
-            edit_btn = tk.Button(btn_row, text=f"{ic.emoji('edit')} Edit", bg=t.PRIMARY, fg="white", font=(t.FONT, 9, "bold"), relief="flat", command=lambda e=event: self.open_edit_event_modal(e))
+            def edit_clicked(e=event):
+                self.open_edit_event_modal(e)
+
+            def delete_clicked(eid=event['id']):
+                self.handle_delete(eid)
+
+            edit_btn = tk.Button(btn_row, text=ic.emoji("edit") + " Edit", bg=t.PRIMARY, fg="white", font=(t.FONT, 9, "bold"), relief="flat", command=edit_clicked)
             edit_btn.pack(side=tk.LEFT, padx=(0, 10), ipadx=10, ipady=4)
             t.add_hover(edit_btn, t.PRIMARY, t.PRIMARY_HOVER)
 
-            delete_btn = tk.Button(btn_row, text=f"{ic.emoji('trash')} Delete", bg="#e74c3c", fg="white", font=(t.FONT, 9, "bold"), relief="flat", command=lambda eid=event['id']: self.handle_delete(eid))
+            delete_btn = tk.Button(btn_row, text=ic.emoji("trash") + " Delete", bg="#e74c3c", fg="white", font=(t.FONT, 9, "bold"), relief="flat", command=delete_clicked)
             delete_btn.pack(side=tk.LEFT, ipadx=10, ipady=4)
             t.add_hover(delete_btn, "#e74c3c", "#c0392b")
 
-    @staticmethod
-    def _booking_val(b, col_key):
+    # what a booking shows in each column
+    def _booking_val(self, b, col_key):
         if col_key == "event":
             return b["event_title"]
         if col_key == "date":
             return b["booking_date"]
         if col_key == "time":
-            return b["event_time"] or "TBA"
+            if b["event_time"]:
+                return b["event_time"]
+            return "TBA"
         if col_key == "guests":
             return b["guests"]
         if col_key == "customer":
             return b["customer_email"]
         if col_key == "total":
-            return f"{float(b['total_price']):,.2f}"
+            return format(float(b['total_price']), ",.2f")
         if col_key == "refund":
-            return f"{float(b['refund_amount']):,.2f} ({b['refund_percent']}%)" if b.get("refund_amount") is not None else ""
+            if b.get("refund_amount") is not None:
+                return format(float(b['refund_amount']), ",.2f") + " (" + str(b['refund_percent']) + "%)"
+            return ""
         if col_key == "status":
             return b["status"]
         return ""
@@ -130,74 +146,122 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
         page_header(self.scrollable_frame, "Bookings", self.build_bookings_content)
 
         bookings = get_bookings_by_vendor(self.email)
-        live = [b for b in bookings if b["status"] != "Cancelled"]
-        refunded = sum(b["refund_amount"] or 0 for b in bookings if b["status"] == "Cancelled")
-        summary = (f"{len(live)} booking(s)  |  {sum(b['guests'] for b in live)} guests  |  "
-                   f"{sum(b['total_price'] for b in live):,.2f} AED booked  |  {refunded:,.2f} AED refunded")
+
+        # totals for the line under the title (cancelled ones dont count, only their refund)
+        live = []
+        refunded = 0
+        for b in bookings:
+            if b["status"] != "Cancelled":
+                live.append(b)
+            else:
+                refunded = refunded + (b["refund_amount"] or 0)
+        guests = 0
+        booked = 0
+        for b in live:
+            guests = guests + b['guests']
+            booked = booked + b['total_price']
+        summary = (str(len(live)) + " booking(s)  |  " + str(guests) + " guests  |  "
+                   + format(booked, ",.2f") + " AED booked  |  " + format(refunded, ",.2f") + " AED refunded")
         tk.Label(self.scrollable_frame, text=summary, font=(t.FONT, 11), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=(0, 10))
 
         if not bookings:
             tk.Label(self.scrollable_frame, text="No customer has booked one of your events yet.", font=(t.FONT, 11, "italic"), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(anchor="w", padx=30, pady=10)
             return
 
-        visible = [b for b in bookings
-                   if all(str(self._booking_val(b, ck)) not in vals for ck, vals in self.booking_hidden.items())]
+        visible = []
+        for b in bookings:
+            shown = True
+            for ck in self.booking_hidden:
+                if str(self._booking_val(b, ck)) in self.booking_hidden[ck]:
+                    shown = False
+            if shown:
+                visible.append(b)
 
 
 
         frame = tk.Frame(self.scrollable_frame, bg=t.CARD_BG, bd=1, relief="solid", highlightbackground=t.BORDER)
         frame.pack(fill=tk.X, padx=30, pady=2)
-        col_keys = [c[0] for c in BOOKING_COLUMNS]
-        tree = ttk.Treeview(frame, columns=col_keys, show="headings", height=min(max(len(visible), 3), 15),
+        col_keys = []
+        for c in BOOKING_COLUMNS:
+            col_keys.append(c[0])
+        # between 3 and 15 rows high
+        rows_high = len(visible)
+        if rows_high < 3:
+            rows_high = 3
+        if rows_high > 15:
+            rows_high = 15
+        tree = ttk.Treeview(frame, columns=col_keys, show="headings", height=rows_high,
                             style=TABLE_STYLE, selectmode="browse")
         stripe_tags(tree)
-        for status, color in STATUS_COLORS.items():
-            tree.tag_configure(f"status_{status}", foreground=color)
+        for status in STATUS_COLORS:
+            tree.tag_configure("status_" + status, foreground=STATUS_COLORS[status])
 
         for col_key, heading, width, anchor, filterable in BOOKING_COLUMNS:
             if filterable:
+                def open_filter(ck=col_key, h=heading):
+                    self._open_booking_filter(ck, h, bookings)
                 tree.heading(col_key, text=heading_text(heading, bool(self.booking_hidden.get(col_key))), anchor=anchor,
-                             command=lambda ck=col_key, h=heading: self._open_booking_filter(ck, h, bookings))
+                             command=open_filter)
             else:
                 tree.heading(col_key, text=heading, anchor=anchor)
-            tree.column(col_key, width=width, minwidth=width, anchor=anchor, stretch=col_key in ("event", "customer"))
+            if col_key == "event" or col_key == "customer":
+                stretch = True
+            else:
+                stretch = False
+            tree.column(col_key, width=width, minwidth=width, anchor=anchor, stretch=stretch)
 
-        for i, b in enumerate(visible):
-            tree.insert("", tk.END, iid=str(b["id"]), values=[self._booking_val(b, ck) for ck in col_keys],
-                        tags=("odd" if i % 2 else "even", f"status_{b['status']}"))
+        i = 0
+        for b in visible:
+            values = []
+            for ck in col_keys:
+                values.append(self._booking_val(b, ck))
+            if i % 2:
+                stripe = "odd"
+            else:
+                stripe = "even"
+            tree.insert("", tk.END, iid=str(b["id"]), values=values,
+                        tags=(stripe, "status_" + str(b['status'])))
+            i += 1
 
         scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=tree.yview)
         tree.configure(yscrollcommand=scrollbar.set)
         tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # Select a row to see its cancellation details, or to cancel it (full refund, reason required).
-        by_id = {str(b["id"]): b for b in visible}
+        # pick a row to see the cancel details or to cancel it (full refund and a reason is needed)
+        by_id = {}
+        for b in visible:
+            by_id[str(b["id"])] = b
         action_row = tk.Frame(self.scrollable_frame, bg=t.PAGE_BG)
         action_row.pack(fill=tk.X, padx=30, pady=(6, 10))
         cancel_btn = cancel_button(action_row)
         cancel_btn.pack(side=tk.LEFT, ipadx=10, ipady=4)
-        # Empty until a row is selected; then shows the cancellation details or what cancelling does.
+        # empty until a row is picked
         detail = tk.Label(action_row, text="", font=(t.FONT, 9), bg=t.PAGE_BG, fg=t.TEXT_MUTED,
                           wraplength=650, justify="left")
         detail.pack(side=tk.LEFT, padx=12)
 
         def selected_booking():
             chosen = tree.selection()
-            return by_id.get(chosen[0]) if chosen else None
+            if chosen:
+                return by_id.get(chosen[0])
+            return None
 
-        def on_select(_event=None):
+        def on_select(event=None):
             b = selected_booking()
-            cancel_btn.config(state=tk.NORMAL if b and b["status"] == "Confirmed" else tk.DISABLED)
+            if b and b["status"] == "Confirmed":
+                cancel_btn.config(state=tk.NORMAL)
+            else:
+                cancel_btn.config(state=tk.DISABLED)
             if not b:
                 return
             if b["status"] == "Cancelled":
                 detail.config(text=cancelled_line(b, self.email), fg="#c0392b")
             elif b["status"] == "Confirmed":
-                detail.config(text=f"{b['customer_email']}, {b['guests']} guest(s). Cancelling refunds the customer in full.",
+                detail.config(text=str(b['customer_email']) + ", " + str(b['guests']) + " guest(s). Cancelling refunds the customer in full.",
                               fg=t.TEXT_MUTED)
             else:
-                detail.config(text=f"This booking is {b['status'].lower()} and cannot be cancelled.", fg=t.TEXT_MUTED)
+                detail.config(text="This booking is " + b['status'].lower() + " and cannot be cancelled.", fg=t.TEXT_MUTED)
 
         def on_cancel():
             b = selected_booking()
@@ -217,39 +281,66 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
         cancel_btn.config(command=on_cancel)
 
         if not visible:
-            tk.Label(self.scrollable_frame, text=f"All rows are hidden by your column filters. Click a {GEAR} heading to change them.",
+            tk.Label(self.scrollable_frame, text="All rows are hidden by your column filters. Click a " + GEAR + " heading to change them.",
                      font=(t.FONT, 9, "italic"), bg=t.PAGE_BG, fg="#e74c3c").pack(anchor="w", padx=30)
 
     def _open_booking_filter(self, col_key, col_name, bookings):
         popup = tk.Toplevel(self.root)
-        popup.title(f"Filter: {col_name}")
+        popup.title("Filter: " + col_name)
         popup.configure(bg=t.CARD_BG)
         popup.resizable(False, False)
         popup.transient(self.root)
         popup.grab_set()
 
-        tk.Label(popup, text=f"{GEAR} Filter {col_name}", font=(t.FONT, 11, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(anchor="w", padx=15, pady=(15, 10))
+        tk.Label(popup, text=GEAR + " Filter " + col_name, font=(t.FONT, 11, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(anchor="w", padx=15, pady=(15, 10))
 
-        counts = Counter(str(self._booking_val(b, col_key)) for b in bookings)
+        # count each value
+        counts = {}
+        for b in bookings:
+            val = str(self._booking_val(b, col_key))
+            if val in counts:
+                counts[val] += 1
+            else:
+                counts[val] = 1
+        # sort them, not case sensitive (insertion sort)
+        values = []
+        for val in counts:
+            values.append(val)
+        for i in range(1, len(values)):
+            temp = values[i]
+            j = i - 1
+            while j >= 0 and values[j].lower() > temp.lower():
+                values[j + 1] = values[j]
+                j -= 1
+            values[j + 1] = temp
+
         hidden = self.booking_hidden.get(col_key, set())
         var_dict = {}
         frame_chk = tk.Frame(popup, bg=t.CARD_BG)
         frame_chk.pack(fill=tk.BOTH, expand=True, padx=15, pady=5)
-        for val in sorted(counts, key=str.lower):
+        for val in values:
             var = tk.BooleanVar(value=(val not in hidden))
             var_dict[val] = var
-            tk.Checkbutton(frame_chk, text=f"{val}  ({counts[val]})", variable=var, bg=t.CARD_BG, font=(t.FONT, 9),
+            tk.Checkbutton(frame_chk, text=val + "  (" + str(counts[val]) + ")", variable=var, bg=t.CARD_BG, font=(t.FONT, 9),
                            fg=t.TEXT, activebackground=t.CARD_BG, anchor="w").pack(fill=tk.X, pady=1)
 
         def apply_filter():
-            self.booking_hidden[col_key] = {val for val, var in var_dict.items() if not var.get()}
+            hidden_now = set()
+            for val in var_dict:
+                if not var_dict[val].get():
+                    hidden_now.add(val)
+            self.booking_hidden[col_key] = hidden_now
             popup.destroy()
             self.build_bookings_content()
 
         def clear_filter():
-            self.booking_hidden.pop(col_key, None)
+            if col_key in self.booking_hidden:
+                del self.booking_hidden[col_key]
             popup.destroy()
             self.build_bookings_content()
+
+        def on_escape(event):
+            popup.destroy()
 
         btns = tk.Frame(popup, bg=t.CARD_BG)
         btns.pack(fill=tk.X, padx=15, pady=15)
@@ -257,7 +348,7 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
                   cursor="hand2", command=apply_filter).pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=5)
         tk.Button(btns, text="Clear", font=(t.FONT, 9), bg=t.CHIP_BG, fg=t.TEXT, relief="flat",
                   cursor="hand2", command=clear_filter).pack(side=tk.LEFT, padx=(8, 0), ipady=5, ipadx=10)
-        popup.bind("<Escape>", lambda e: popup.destroy())
+        popup.bind("<Escape>", on_escape)
 
     def build_venues_content(self):
         for widget in self.scrollable_frame.winfo_children():
@@ -268,22 +359,35 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
         add_box = tk.Frame(self.scrollable_frame, bg=t.PAGE_BG)
         add_box.pack(fill=tk.X, padx=30, pady=10)
 
+        # the boxes start with a hint that goes away when you click in them
+        def clear_name(event):
+            if name_entry.get() == "Venue Name":
+                name_entry.delete(0, tk.END)
+
+        def clear_addr(event):
+            if addr_entry.get() == "Address / Location":
+                addr_entry.delete(0, tk.END)
+
+        def clear_maps(event):
+            if maps_entry.get() == "Google Maps link (optional)":
+                maps_entry.delete(0, tk.END)
+
         name_entry = tk.Entry(add_box, font=(t.FONT, 11), bg=t.CARD_BG, relief="solid", bd=1, width=25)
         name_entry.pack(side=tk.LEFT, ipady=5, padx=(0, 10))
         name_entry.insert(0, "Venue Name")
-        name_entry.bind("<FocusIn>", lambda e: name_entry.delete(0, tk.END) if name_entry.get() == "Venue Name" else None)
+        name_entry.bind("<FocusIn>", clear_name)
 
         addr_entry = tk.Entry(add_box, font=(t.FONT, 11), bg=t.CARD_BG, relief="solid", bd=1, width=30)
         addr_entry.pack(side=tk.LEFT, ipady=5, padx=(0, 10))
         addr_entry.insert(0, "Address / Location")
-        addr_entry.bind("<FocusIn>", lambda e: addr_entry.delete(0, tk.END) if addr_entry.get() == "Address / Location" else None)
+        addr_entry.bind("<FocusIn>", clear_addr)
 
         maps_row = tk.Frame(self.scrollable_frame, bg=t.PAGE_BG)
         maps_row.pack(fill=tk.X, padx=30, pady=(0, 5))
         maps_entry = tk.Entry(maps_row, font=(t.FONT, 11), bg=t.CARD_BG, relief="solid", bd=1, width=62)
         maps_entry.pack(side=tk.LEFT, ipady=5)
         maps_entry.insert(0, "Google Maps link (optional)")
-        maps_entry.bind("<FocusIn>", lambda e: maps_entry.delete(0, tk.END) if maps_entry.get() == "Google Maps link (optional)" else None)
+        maps_entry.bind("<FocusIn>", clear_maps)
         tk.Label(maps_row, text="In Google Maps: Share > Copy link", font=(t.FONT, 9, "italic"), bg=t.PAGE_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT, padx=10)
 
         def handle_add_venue():
@@ -302,7 +406,7 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
             messagebox.showinfo("Success", "Venue added successfully!")
             self.build_venues_content()
 
-        add_btn = tk.Button(add_box, text=f"{ic.emoji('plus')} Add Venue", font=(t.FONT, 10, "bold"), bg=t.PRIMARY, fg="white", relief="flat", command=handle_add_venue)
+        add_btn = tk.Button(add_box, text=ic.emoji("plus") + " Add Venue", font=(t.FONT, 10, "bold"), bg=t.PRIMARY, fg="white", relief="flat", command=handle_add_venue)
         add_btn.pack(side=tk.LEFT, ipadx=15, ipady=7)
         t.add_hover(add_btn, t.PRIMARY, t.PRIMARY_HOVER)
 
@@ -320,26 +424,31 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
             row = tk.Frame(list_frame, bg=t.CARD_BG, bd=1, relief="solid", highlightbackground=t.BORDER)
             row.pack(fill=tk.X, pady=5, ipady=5, ipadx=10)
 
-            tk.Label(row, text=f"{v['name']}  -  {v['address']}", font=(t.FONT, 11, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(side=tk.LEFT, padx=10)
+            tk.Label(row, text=str(v['name']) + "  -  " + str(v['address']), font=(t.FONT, 11, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(side=tk.LEFT, padx=10)
 
             if v.get("maps_url"):
                 venue_label(row, "Open map", v["maps_url"], font=(t.FONT, 10), bg=t.CARD_BG, fg=t.TEXT).pack(side=tk.LEFT, padx=(0, 5))
             else:
                 tk.Label(row, text="No map link", font=(t.FONT, 9, "italic"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(side=tk.LEFT, padx=(0, 5))
-            edit_link_btn = tk.Button(row, text=f"{ic.emoji('edit')} Edit link", font=(t.FONT, 9, "bold"), bg=t.CHIP_BG, fg=t.TEXT, relief="flat",
-                                      cursor="hand2", command=lambda venue=v: self.open_maps_link_window(venue))
+
+            def edit_link(venue=v):
+                self.open_maps_link_window(venue)
+
+            def delete_clicked(vid=v["id"]):
+                self.handle_delete_venue(vid)
+
+            edit_link_btn = tk.Button(row, text=ic.emoji("edit") + " Edit link", font=(t.FONT, 9, "bold"), bg=t.CHIP_BG, fg=t.TEXT, relief="flat",
+                                      cursor="hand2", command=edit_link)
             edit_link_btn.pack(side=tk.LEFT, padx=5, ipadx=8, ipady=2)
             t.add_hover(edit_link_btn, t.CHIP_BG, t.CHIP_HOVER)
 
-            def make_delete(vid):
-                return lambda: self.handle_delete_venue(vid)
-
-            del_btn = tk.Button(row, text=f"{ic.emoji('trash')} Delete", font=(t.FONT, 9, "bold"), bg="#e74c3c", fg="white", relief="flat", command=make_delete(v["id"]))
+            del_btn = tk.Button(row, text=ic.emoji("trash") + " Delete", font=(t.FONT, 9, "bold"), bg="#e74c3c", fg="white", relief="flat", command=delete_clicked)
             del_btn.pack(side=tk.RIGHT, padx=10, ipadx=8, ipady=3)
             t.add_hover(del_btn, "#e74c3c", "#c0392b")
 
     def open_maps_link_window(self, venue):
-        width, height = 500, 260
+        width = 500
+        height = 260
         win = tk.Toplevel(self.root)
         win.title("Google Maps link")
         win.configure(bg=t.CARD_BG)
@@ -349,7 +458,7 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
         win.update_idletasks()
         x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (width // 2)
         y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (height // 2)
-        win.geometry(f"{width}x{height}+{x}+{y}")
+        win.geometry(str(width) + "x" + str(height) + "+" + str(x) + "+" + str(y))
         try:
             win.grab_set()
         except tk.TclError:
@@ -361,7 +470,10 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
 
         link_entry = tk.Entry(win, font=(t.FONT, 10), bg=t.FIELD_BG, relief="solid", bd=1)
         link_entry.pack(fill=tk.X, padx=25, ipady=6)
-        link_entry.insert(0, venue.get("maps_url") or "")
+        old_link = venue.get("maps_url")
+        if not old_link:
+            old_link = ""
+        link_entry.insert(0, old_link)
         link_entry.focus_set()
 
         def save():
@@ -401,10 +513,14 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
         add_box = tk.Frame(self.scrollable_frame, bg=t.PAGE_BG)
         add_box.pack(fill=tk.X, padx=30, pady=10)
 
+        def clear_hint(event):
+            if cat_entry.get() == "New Category Name":
+                cat_entry.delete(0, tk.END)
+
         cat_entry = tk.Entry(add_box, font=(t.FONT, 11), bg=t.CARD_BG, relief="solid", bd=1, width=30)
         cat_entry.pack(side=tk.LEFT, ipady=5, padx=(0, 10))
         cat_entry.insert(0, "New Category Name")
-        cat_entry.bind("<FocusIn>", lambda e: cat_entry.delete(0, tk.END) if cat_entry.get() == "New Category Name" else None)
+        cat_entry.bind("<FocusIn>", clear_hint)
 
         def handle_add_category():
             name = cat_entry.get().strip()
@@ -417,7 +533,7 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
             messagebox.showinfo("Success", "Category added successfully!")
             self.build_categories_content()
 
-        add_btn = tk.Button(add_box, text=f"{ic.emoji('plus')} Add Category", font=(t.FONT, 10, "bold"), bg=t.PRIMARY, fg="white", relief="flat", command=handle_add_category)
+        add_btn = tk.Button(add_box, text=ic.emoji("plus") + " Add Category", font=(t.FONT, 10, "bold"), bg=t.PRIMARY, fg="white", relief="flat", command=handle_add_category)
         add_btn.pack(side=tk.LEFT, ipadx=15, ipady=7)
         t.add_hover(add_btn, t.PRIMARY, t.PRIMARY_HOVER)
 
@@ -437,10 +553,10 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
 
             tk.Label(row, text=cat["name"], font=(t.FONT, 11, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(side=tk.LEFT, padx=10)
 
-            def make_delete(cid):
-                return lambda: self.handle_delete_category(cid)
+            def delete_clicked(cid=cat["id"]):
+                self.handle_delete_category(cid)
 
-            del_btn = tk.Button(row, text=f"{ic.emoji('trash')} Delete", font=(t.FONT, 9, "bold"), bg="#e74c3c", fg="white", relief="flat", command=make_delete(cat["id"]))
+            del_btn = tk.Button(row, text=ic.emoji("trash") + " Delete", font=(t.FONT, 9, "bold"), bg="#e74c3c", fg="white", relief="flat", command=delete_clicked)
             del_btn.pack(side=tk.RIGHT, padx=10, ipadx=8, ipady=3)
             t.add_hover(del_btn, "#e74c3c", "#c0392b")
 
@@ -456,6 +572,7 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
     def open_edit_event_modal(self, event):
         self.open_event_form("Edit Event Listing", event)
 
+    # the same form is used to add a new event and to edit one (then event is not None)
     def open_event_form(self, window_title, event=None):
         modal = tk.Toplevel(self.root)
         modal.title(window_title)
@@ -466,7 +583,7 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
         modal.update_idletasks()
         x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (480 // 2)
         y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (840 // 2)
-        modal.geometry(f"+{x}+{y}")
+        modal.geometry("+" + str(x) + "+" + str(y))
 
         tk.Label(modal, text=window_title, font=(t.FONT, 18, "bold"), bg=t.CARD_BG, fg=t.TEXT).pack(anchor="w", padx=30, pady=(20, 10))
 
@@ -479,11 +596,16 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
         title_entry.pack(fill=tk.X, ipady=4)
         if event: title_entry.insert(0, event["title"])
 
-        # Category Dropdown
+        # Category
         tk.Label(form_frame, text="CATEGORY", font=(t.FONT, 9, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", pady=(8, 2))
         vendor_cats = get_vendor_categories(self.email)
-        cat_names = [c["name"] for c in vendor_cats] if vendor_cats else ["General"]
-        
+        if vendor_cats:
+            cat_names = []
+            for c in vendor_cats:
+                cat_names.append(c["name"])
+        else:
+            cat_names = ["General"]
+
         selected_category = tk.StringVar(modal)
         if event and event["category"] in cat_names:
             selected_category.set(event["category"])
@@ -494,20 +616,24 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
         cat_menu.config(font=(t.FONT, 10), bg=t.FIELD_BG, relief="solid", bd=1, highlightthickness=0)
         cat_menu.pack(fill=tk.X, ipady=2)
 
-        # Venue Dropdown Selection
+        # Venue
         tk.Label(form_frame, text="VENUE", font=(t.FONT, 9, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", pady=(8, 2))
-        
+
         venues = get_venues_by_vendor(self.email)
-        venue_dict = {f"{v['name']} ({v['address']})": v['id'] for v in venues} if venues else {}
-        if venue_dict:
-            venue_options = list(venue_dict.keys())
-        else:
+        venue_dict = {}  # "name (address)" -> id
+        venue_options = []
+        for v in venues:
+            key = str(v['name']) + " (" + str(v['address']) + ")"
+            if key not in venue_dict:
+                venue_options.append(key)
+            venue_dict[key] = v['id']
+        if not venue_dict:
             venue_options = ["No venues available. Please add one in Manage Venues."]
 
         selected_venue_str = tk.StringVar(modal)
         if event and event.get("venue_id"):
-            for v_name, v_id in venue_dict.items():
-                if v_id == event["venue_id"]:
+            for v_name in venue_dict:
+                if venue_dict[v_name] == event["venue_id"]:
                     selected_venue_str.set(v_name)
                     break
         if not selected_venue_str.get() and venue_options:
@@ -517,23 +643,26 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
         venue_menu.config(font=(t.FONT, 10), bg=t.FIELD_BG, relief="solid", bd=1, highlightthickness=0)
         venue_menu.pack(fill=tk.X, ipady=2)
 
-        # Date & Time
+        # Date and time
         tk.Label(form_frame, text="DATE & TIME (YYYY-MM-DD HH:MM)", font=(t.FONT, 9, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", pady=(8, 2))
         datetime_entry = tk.Entry(form_frame, font=(t.FONT, 11), bg=t.FIELD_BG, relief="solid", bd=1)
         datetime_entry.pack(fill=tk.X, ipady=4)
         if event: datetime_entry.insert(0, event.get("event_datetime", ""))
 
-        # Recurring or One-Time
+        # one time or recurring
         tk.Label(form_frame, text="EVENT TYPE", font=(t.FONT, 9, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", pady=(8, 2))
         recurring_var = tk.StringVar(modal)
-        recurring_var.set(event.get("is_recurring", "One-Time") if event else "One-Time")
-        
+        if event:
+            recurring_var.set(event.get("is_recurring", "One-Time"))
+        else:
+            recurring_var.set("One-Time")
+
         rec_frame = tk.Frame(form_frame, bg=t.CARD_BG)
         rec_frame.pack(fill=tk.X)
         tk.Radiobutton(rec_frame, text="One-Time", variable=recurring_var, value="One-Time", bg=t.CARD_BG, font=(t.FONT, 9)).pack(side=tk.LEFT, padx=(0, 15))
         tk.Radiobutton(rec_frame, text="Recurring", variable=recurring_var, value="Recurring", bg=t.CARD_BG, font=(t.FONT, 9)).pack(side=tk.LEFT)
 
-        # Visual Day Selection Boxes
+        # buttons for the week days
         tk.Label(form_frame, text="RECURRENCE DAYS", font=(t.FONT, 9, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", pady=(8, 2))
         days_frame = tk.Frame(form_frame, bg=t.CARD_BG)
         days_frame.pack(fill=tk.X, pady=2)
@@ -541,12 +670,15 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
         days_list = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
         selected_days_set = set()
         if event and event.get("recur_day"):
-            selected_days_set = set([d.strip() for d in event["recur_day"].split(",") if d.strip()])
+            for d in event["recur_day"].split(","):
+                if d.strip():
+                    selected_days_set.add(d.strip())
 
         day_buttons = {}
 
         def update_day_buttons():
-            for d_name, btn in day_buttons.items():
+            for d_name in day_buttons:
+                btn = day_buttons[d_name]
                 if d_name in selected_days_set:
                     btn.config(bg=t.PRIMARY, fg="white")
                 else:
@@ -568,13 +700,20 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
             short_name = d[:3]
             btn = tk.Button(days_frame, text=short_name, font=(t.FONT, 9, "bold"), width=5, relief="flat")
             btn.pack(side=tk.LEFT, padx=2)
-            btn.bind("<Button-1>", lambda e, name=d: toggle_day(name))
-            btn.bind("<Double-Button-1>", lambda e, name=d: deselect_day(name))
+
+            def on_click(e, name=d):
+                toggle_day(name)
+
+            def on_double(e, name=d):
+                deselect_day(name)
+
+            btn.bind("<Button-1>", on_click)
+            btn.bind("<Double-Button-1>", on_double)
             day_buttons[d] = btn
 
         update_day_buttons()
 
-        # Price and capacity share one row, so the form keeps its height
+        # price and capacity are on one row so the form is not too high
         price_cap_row = tk.Frame(form_frame, bg=t.CARD_BG)
         price_cap_row.pack(fill=tk.X, pady=(8, 0))
 
@@ -592,15 +731,25 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
         tk.Label(capacity_col, text="CAPACITY (GUESTS)", font=(t.FONT, 9, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", pady=(0, 2))
         capacity_entry = tk.Entry(capacity_col, font=(t.FONT, 11), bg=t.FIELD_BG, relief="solid", bd=1)
         capacity_entry.pack(fill=tk.X, ipady=4)
-        capacity_entry.insert(0, str(event.get("capacity") or DEFAULT_EVENT_CAPACITY) if event else str(DEFAULT_EVENT_CAPACITY))
+        start_capacity = DEFAULT_EVENT_CAPACITY
+        if event and event.get("capacity"):
+            start_capacity = event.get("capacity")
+        capacity_entry.insert(0, str(start_capacity))
 
-        # Picture (optional): shown on the right of the event card, cropped to fit, never stretched.
+        # picture (optional), it shows on the right of the event card
         pic_state = {"b64": None, "remove": False}
-        tk.Label(form_frame, text=f"EVENT PICTURE (OPTIONAL)", font=(t.FONT, 9, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", pady=(8, 2))
+        tk.Label(form_frame, text="EVENT PICTURE (OPTIONAL)", font=(t.FONT, 9, "bold"), bg=t.CARD_BG, fg=t.TEXT_MUTED).pack(anchor="w", pady=(8, 2))
         pic_row = tk.Frame(form_frame, bg=t.CARD_BG)
         pic_row.pack(fill=tk.X)
-        had_picture = bool(event) and event_images.load_image(event["id"]) is not None
-        pic_label = tk.Label(pic_row, text="Current picture kept" if had_picture else "No picture selected", font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED)
+        had_picture = False
+        if event:
+            if event_images.load_image(event["id"]) is not None:
+                had_picture = True
+        if had_picture:
+            pic_text = "Current picture kept"
+        else:
+            pic_text = "No picture selected"
+        pic_label = tk.Label(pic_row, text=pic_text, font=(t.FONT, 9), bg=t.CARD_BG, fg=t.TEXT_MUTED)
 
         def choose_picture():
             path = filedialog.askopenfilename(parent=modal, title="Choose event picture",
@@ -610,7 +759,7 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
             try:
                 pic_state["b64"] = event_images.encode_image_file(path)
             except Exception as exc:
-                messagebox.showerror("Picture", f"This picture could not be used: {exc}", parent=modal)
+                messagebox.showerror("Picture", "This picture could not be used: " + str(exc), parent=modal)
                 return
             pic_state["remove"] = False
             pic_label.config(text=os.path.basename(path))
@@ -636,7 +785,16 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
             selected_venue_name = selected_venue_str.get()
             event_datetime = datetime_entry.get().strip()
             is_recurring = recurring_var.get()
-            recur_day = ", ".join([d for d in days_list if d in selected_days_set]) if selected_days_set else "None"
+            # days in the week order, like "Tuesday, Thursday"
+            if selected_days_set:
+                recur_day = ""
+                for d in days_list:
+                    if d in selected_days_set:
+                        if recur_day != "":
+                            recur_day = recur_day + ", "
+                        recur_day = recur_day + d
+            else:
+                recur_day = "None"
             price_val = price_entry.get().strip()
             capacity_val = capacity_entry.get().strip()
             desc = desc_text.get("1.0", tk.END).strip()
@@ -647,11 +805,20 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
             if not selected_venue_name or selected_venue_name not in venue_dict:
                 messagebox.showerror("Error", "Please select a valid venue from your Manage Venues list.", parent=modal)
                 return
-            if not (price_val.isascii() and price_val.isdigit()) or int(price_val) <= 0:
+
+            price_ok = price_val.isascii() and price_val.isdigit()
+            if price_ok and int(price_val) <= 0:
+                price_ok = False
+            if not price_ok:
                 messagebox.showerror("Error", "Price must contain numbers only.", parent=modal)
                 return
-            if not (capacity_val.isascii() and capacity_val.isdigit()) or not 1 <= int(capacity_val) <= MAX_EVENT_CAPACITY:
-                messagebox.showerror("Error", f"Capacity must be a whole number from 1 to {MAX_EVENT_CAPACITY}.", parent=modal)
+
+            capacity_ok = capacity_val.isascii() and capacity_val.isdigit()
+            if capacity_ok:
+                if int(capacity_val) < 1 or int(capacity_val) > MAX_EVENT_CAPACITY:
+                    capacity_ok = False
+            if not capacity_ok:
+                messagebox.showerror("Error", "Capacity must be a whole number from 1 to " + str(MAX_EVENT_CAPACITY) + ".", parent=modal)
                 return
             if not desc or len(desc) < 10:
                 messagebox.showerror("Error", "Description must be at least 10 characters long.", parent=modal)
@@ -669,7 +836,7 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
                 recur_day = "N/A"
 
             venue_id = venue_dict[selected_venue_name]
-            formatted_price = f"{price_val} AED"
+            formatted_price = price_val + " AED"
             recur_time = parsed_datetime.strftime("%H:%M")
 
             if event:
@@ -693,20 +860,22 @@ class VendorWelcomeScreen(BaseWelcomeScreen):
 
         modal.bind("<Return>", save_event)
 
-        # Enter inside the description box must add a new line, not save the form.
+        # enter in the description adds a new line and doesnt save the form
         def newline_in_description(event):
             desc_text.insert(tk.INSERT, "\n")
             return "break"
 
         desc_text.bind("<Return>", newline_in_description)
 
-        save_btn = tk.Button(modal, text=f"Save", font=(t.FONT, 11, "bold"), bg=t.PRIMARY, fg="white", relief="flat", command=save_event)
+        save_btn = tk.Button(modal, text="Save", font=(t.FONT, 11, "bold"), bg=t.PRIMARY, fg="white", relief="flat", command=save_event)
         save_btn.pack(fill=tk.X, padx=30, pady=15, ipady=8)
         t.add_hover(save_btn, t.PRIMARY, t.PRIMARY_HOVER)
 
     def handle_delete(self, event_id):
         active = count_active_bookings(event_id)
-        warning = f"\n\n{active} upcoming booking(s) will be cancelled with a full refund, and their tickets will stop working." if active else ""
+        warning = ""
+        if active:
+            warning = "\n\n" + str(active) + " upcoming booking(s) will be cancelled with a full refund, and their tickets will stop working."
         if messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this event listing?" + warning):
             delete_event(event_id)
             messagebox.showinfo("Deleted", "Event listing deleted successfully.")

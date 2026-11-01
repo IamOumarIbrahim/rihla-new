@@ -1,4 +1,4 @@
-"""Shared colors and fonts so every screen looks consistent."""
+# colors and fonts for all the screens so they look the same
 
 FONT = "Segoe UI"
 
@@ -20,7 +20,13 @@ CHIP_BG = "#ecf0f1"
 CHIP_HOVER = "#dfe6e9"
 
 
+# changes the background of a widget while the mouse is on it
 def add_hover(widget, normal, hover):
-    """Change a widget's background while the mouse is over it."""
-    widget.bind("<Enter>", lambda e: widget.config(bg=hover))
-    widget.bind("<Leave>", lambda e: widget.config(bg=normal))
+    def on_enter(event):
+        widget.config(bg=hover)
+
+    def on_leave(event):
+        widget.config(bg=normal)
+
+    widget.bind("<Enter>", on_enter)
+    widget.bind("<Leave>", on_leave)

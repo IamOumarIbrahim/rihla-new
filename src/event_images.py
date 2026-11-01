@@ -1,12 +1,9 @@
-"""
-event_images.py - event pictures for the cards and the event page.
-
-  load_image(event_id)     -> PIL image downloaded from the server (cached), or None
-  CoverImage               -> widget that fills its whole area with the picture (cropped, never stretched)
-  build_card_shell(...)    -> splits a card into a text area (returned) and a picture area on the right
-  encode_image_file(path)  -> turns the file a vendor picked into base64 JPEG text for the server
-Needs Pillow:  pip install pillow
-"""
+# pictures of the events for the cards and the event page
+#   load_image(event_id)    gets the picture from the server (saved in _cache) or None
+#   CoverImage              widget that fills all its space with the picture (cropped, not stretched)
+#   build_card_shell(...)   splits a card in a text part (returned) and a picture part on the right
+#   encode_image_file(path) turns the file the vendor picked into base64 jpeg text for the server
+# needs Pillow:  pip install pillow
 import base64
 import io
 import tkinter as tk
@@ -20,12 +17,13 @@ try:
 except ImportError:
     PIL_AVAILABLE = False
 
-_cache = {}  # event_id -> PIL image, or None when the event has no picture
+_cache = {}  # event_id -> picture, or None if the event has no picture
 
 
+# forget the saved picture (after the vendor changed it)
 def forget(event_id):
-    """Drop the cached picture (call after the vendor changed it)."""
-    _cache.pop(event_id, None)
+    if event_id in _cache:
+        del _cache[event_id]
 
 
 def load_image(event_id):
@@ -46,13 +44,14 @@ def load_image(event_id):
     return img
 
 
+# reads a picture file and gives it back as base64 jpeg text (turned the right way, smaller if its huge)
 def encode_image_file(path, max_side=1400):
-    """Reads a picture file and returns it as base64 JPEG text (upright, shrunk if huge)."""
     if not PIL_AVAILABLE:
         raise RuntimeError("Pillow is not installed. Run: python -m pip install pillow")
     img = Image.open(path)
     img = ImageOps.exif_transpose(img)
     if img.mode in ("RGBA", "LA", "P"):
+        # white background because jpeg has no transparency
         img = img.convert("RGBA")
         background = Image.new("RGB", img.size, (255, 255, 255))
         background.paste(img, mask=img.split()[-1])
@@ -65,12 +64,13 @@ def encode_image_file(path, max_side=1400):
     return base64.b64encode(buf.getvalue()).decode("ascii")
 
 
+# fills the whole frame with the picture, scaled to cover and cut in the middle, never stretched
 class CoverImage(tk.Frame):
-    """Fills its whole area with the picture: scaled to cover, centre-cropped, never stretched."""
 
     def __init__(self, parent, pil_image=None, **kwargs):
-        kwargs.setdefault("bg", t.CHIP_BG)
-        super().__init__(parent, **kwargs)
+        if "bg" not in kwargs:
+            kwargs["bg"] = t.CHIP_BG
+        tk.Frame.__init__(self, parent, **kwargs)
         self._pil = pil_image
         self._photo = None
         self._last_size = (0, 0)
@@ -92,16 +92,16 @@ class CoverImage(tk.Frame):
         self._label.config(image=self._photo)
 
 
+# splits a card frame in a text part (returned) and a picture part on the right
 def build_card_shell(outer, event_id, bg=None, text_weight=1, image_weight=1):
-    """Splits a bordered card frame into a text area (returned) and a picture area on the right."""
-    bg = bg or t.CARD_BG
-    opts0 = {"weight": text_weight}
-    opts1 = {"weight": image_weight}
+    if not bg:
+        bg = t.CARD_BG
     if text_weight == image_weight:
-        opts0["uniform"] = "half"
-        opts1["uniform"] = "half"
-    outer.columnconfigure(0, **opts0)
-    outer.columnconfigure(1, **opts1)
+        outer.columnconfigure(0, weight=text_weight, uniform="half")
+        outer.columnconfigure(1, weight=image_weight, uniform="half")
+    else:
+        outer.columnconfigure(0, weight=text_weight)
+        outer.columnconfigure(1, weight=image_weight)
     outer.rowconfigure(0, weight=1)
     text_area = tk.Frame(outer, bg=bg)
     text_area.grid(row=0, column=0, sticky="nsew")
