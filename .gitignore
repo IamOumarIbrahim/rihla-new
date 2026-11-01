@@ -34,3 +34,4 @@ server/event_images/
 .DS_Store
 Thumbs.db
 desktop.ini
+report/
