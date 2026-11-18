@@ -1,5 +1,4 @@
 import os
-import sqlite3
 import sys
 import tempfile
 import unittest
@@ -7,6 +6,8 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "server"))
 
+import db_test_helpers as d
+import db
 import database_core as core
 
 ADMIN = "admin@email.com"
@@ -15,7 +16,7 @@ ADMIN = "admin@email.com"
 class AdminTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        core.DB_PATH = os.path.join(self.tmp.name, "test.db")
+        d.use_test_schema()
         core.init_db()
 
     def tearDown(self):
@@ -60,8 +61,8 @@ class AdminTests(unittest.TestCase):
         self.assertFalse(core.set_user_banned(ADMIN, "nobody@email.com", True)["success"])
 
     def test_old_database_gets_signup_dates_and_ban_columns(self):
-        old_path = os.path.join(self.tmp.name, "old.db")
-        conn = sqlite3.connect(old_path)
+        d.use_test_schema()
+        conn = db.connect()
         conn.execute("CREATE TABLE users (email TEXT UNIQUE, password TEXT, role TEXT NOT NULL DEFAULT 'Customer', phone TEXT)")
         conn.execute("INSERT INTO users (email, password, role) VALUES ('old@email.com', 'pw', 'Customer')")
         conn.execute("INSERT INTO users (email, password, role) VALUES ('quiet@email.com', 'pw', 'Customer')")
@@ -72,7 +73,6 @@ class AdminTests(unittest.TestCase):
                      "VALUES ('old@email.com', 'Hi', 'An old question', '2025-03-04 05:06:07')")
         conn.commit()
         conn.close()
-        core.DB_PATH = old_path
         core.init_db()
         core.init_db()
         users = {u["email"]: u for u in core.get_all_users(ADMIN)}
@@ -86,7 +86,7 @@ class AdminTests(unittest.TestCase):
 class ReportTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        core.DB_PATH = os.path.join(self.tmp.name, "test.db")
+        d.use_test_schema()
         core.init_db()
 
     def tearDown(self):
@@ -132,7 +132,7 @@ class ApiAccountGuardTests(unittest.TestCase):
     def setUp(self):
         import server
         self.tmp = tempfile.TemporaryDirectory()
-        core.DB_PATH = os.path.join(self.tmp.name, "test.db")
+        d.use_test_schema()
         core.init_db()
         self.client = server.app.test_client()
 

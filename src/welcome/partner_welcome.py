@@ -559,7 +559,7 @@ class PartnerWelcomeScreen(BaseWelcomeScreen):
                 code_color = t.TEXT
             else:
                 code_color = t.TEXT_MUTED
-            tk.Label(card, text=format_ticket_code(b["ticket_code"]), font=("Consolas", 15, "bold"),
+            tk.Label(card, text=format_ticket_code(b["ticket_code"]), font=(t.MONO, 15, "bold"),
                      bg=t.CARD_BG, fg=code_color).pack(anchor="w", padx=15, pady=(0, 5))
             if b["status"] == "Cancelled":
                 tk.Label(card, text=cancelled_line(b, self.email), font=(t.FONT, 9), bg=t.CARD_BG, fg="#c0392b",

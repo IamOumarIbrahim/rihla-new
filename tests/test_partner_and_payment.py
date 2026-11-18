@@ -26,7 +26,7 @@ class PartnerAndPaymentTests(unittest.TestCase):
         self.root = tk.Tk()
         self.root.withdraw()
         self.tmp = tempfile.TemporaryDirectory()
-        database_core.DB_PATH = os.path.join(self.tmp.name, "test_partner.db")
+        d.use_test_schema()
         d.init_db()
         self.events = {e["title"]: e for e in d.get_all_events()}
         self.safari = self.events["Red Dune Sunset Safari and Royal BBQ Dinner"]

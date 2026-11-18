@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Fills the server database (server\users.db) with demo data: venues, events with pictures,
+    Fills the PostgreSQL database with demo data: venues, events with pictures,
     vehicles and dispatches, extra customers (with sign-up dates), bookings (upcoming, today, past,
     cancelled), reviews, support tickets, reports for the admin and a partner cart.
 
@@ -214,6 +214,8 @@ REPORTS = [
 
 def ensure_seed_table(conn):
     conn.execute("CREATE TABLE IF NOT EXISTS demo_seed (tbl TEXT NOT NULL, row_id INTEGER NOT NULL)")
+    # users have no id column, so the seeded users are kept by email
+    conn.execute("CREATE TABLE IF NOT EXISTS demo_seed_users (email TEXT NOT NULL)")
 
 
 def seeded_ids(conn, tbl):
@@ -228,8 +230,7 @@ def clear_seed():
     with core._connect() as conn:
         ensure_seed_table(conn)
         event_ids = seeded_ids(conn, "events")
-        user_rowids = seeded_ids(conn, "users")
-        seeded_emails = [r[0].lower() for r in conn.execute(f"SELECT email FROM users WHERE rowid IN {in_list(user_rowids)}")]
+        seeded_emails = [r[0].lower() for r in conn.execute("SELECT email FROM demo_seed_users")]
         emails_sql = "(" + ",".join("?" for _ in seeded_emails) + ")" if seeded_emails else "(NULL)"
 
         # Bookings the script made, plus any booking on a seeded event or by a seeded customer.
@@ -256,16 +257,19 @@ def clear_seed():
                      f"OR event_id IN {in_list(event_ids)} OR vehicle_id IN {in_list(vehicle_ids)}")
         conn.execute(f"DELETE FROM vehicles WHERE id IN {in_list(vehicle_ids)}")
         conn.execute(f"DELETE FROM events WHERE id IN {in_list(event_ids)}")
+        # seeded staff go first, a venue cannot be deleted while staff still work there
+        conn.execute(f"DELETE FROM users WHERE lower(email) IN {emails_sql}", seeded_emails)
         # Keep a seeded venue if someone has since put their own event there,
         # or while staff of your own (e.g. the demo staff after a Settings change) work there.
         conn.execute(f"DELETE FROM venues WHERE id IN {in_list(seeded_ids(conn, 'venues'))} "
                      f"AND id NOT IN (SELECT venue_id FROM events WHERE venue_id IS NOT NULL) "
-                     f"AND id NOT IN (SELECT venue_id FROM users WHERE venue_id IS NOT NULL AND rowid NOT IN {in_list(user_rowids)})")
+                     f"AND id NOT IN (SELECT venue_id FROM users WHERE venue_id IS NOT NULL AND lower(email) NOT IN {emails_sql})",
+                     seeded_emails)
         conn.execute(f"DELETE FROM vendor_categories WHERE id IN {in_list(seeded_ids(conn, 'vendor_categories'))}")
         conn.execute(f"DELETE FROM reports WHERE id IN {in_list(seeded_ids(conn, 'reports'))} "
                      f"OR lower(reporter_email) IN {emails_sql}", seeded_emails)
-        conn.execute(f"DELETE FROM users WHERE rowid IN {in_list(user_rowids)}")
         conn.execute("DELETE FROM demo_seed")
+        conn.execute("DELETE FROM demo_seed_users")
 
     for event_id in event_ids:
         try:
@@ -328,7 +332,7 @@ def seed():
             signed_up = f"{(TODAY - timedelta(days=signed_up_days_ago)).isoformat()} 14:05:00"
             cur = conn.execute("INSERT INTO users (email, password, role, phone, currency, created_at) VALUES (?, ?, 'Customer', NULL, ?, ?)",
                                (email, core.hash_password(DEMO_PASSWORD), currency, signed_up))
-            track("users", cur.lastrowid)
+            conn.execute("INSERT INTO demo_seed_users (email) VALUES (?)", (email,))
 
         venue_ids = {}
         for key, (name, address, maps_url) in VENUES.items():
@@ -355,7 +359,7 @@ def seed():
                 (email, core.hash_password(DEMO_PASSWORD), role, signed_up, core.hash_password(ssn), ssn[-4:],
                  venue_id, manager_email),
             )
-            track("users", cur.lastrowid)
+            conn.execute("INSERT INTO demo_seed_users (email) VALUES (?)", (email,))
 
         for name in CATEGORIES:
             if conn.execute("SELECT 1 FROM vendor_categories WHERE lower(vendor_email) = lower(?) AND lower(name) = lower(?)",

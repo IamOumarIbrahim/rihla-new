@@ -1,4 +1,5 @@
 import tkinter as tk
+import theme as t
 from tkinter import messagebox
 
 from database import login, get_user_email
@@ -10,7 +11,7 @@ def open_social_login(root, provider):
     social_window.title("Sign in with " + provider)
     social_window.geometry("350x300")
 
-    tk.Label(social_window, text="Sign in with " + provider, font=("Arial", 14, "bold")).pack(pady=15)
+    tk.Label(social_window, text="Sign in with " + provider, font=(t.FONT, 14, "bold")).pack(pady=15)
     tk.Label(social_window, text="Email").pack(pady=2)
     email_entry = tk.Entry(social_window, width=25)
     email_entry.pack(pady=5)

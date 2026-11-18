@@ -3,10 +3,12 @@ socket.setdefaulttimeout(3)
 import tkinter as tk
 
 import navigate
+import theme
 
 
 def main():
 
+    theme.load_fonts()
     root = tk.Tk()
     root.title("Rihla")
 

@@ -4,13 +4,12 @@ from datetime import datetime
 import os
 import re
 import secrets
-import sqlite3
+import db
 from contextlib import contextmanager
 
-from config import DEMO_ACCOUNTS, ADMIN_ROLE, SIGNUP_ROLES
+from config import DEMO_ACCOUNTS, ADMIN_ROLE, SIGNUP_ROLES, MIN_PASSWORD_LENGTH
 
-# the db file is always next to this file (server/users.db)
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "users.db")
+# the database is PostgreSQL now, where it is and how to log in is in db.py
 
 # guests an event can take on one date when it has no vehicles
 DEFAULT_EVENT_CAPACITY = 20
@@ -120,7 +119,7 @@ def _now():
 # opens the server db, commits at the end and always closes it
 @contextmanager
 def _connect():
-    conn = sqlite3.connect(DB_PATH)
+    conn = db.connect()
     try:
         yield conn
         conn.commit()
@@ -234,7 +233,7 @@ def init_db():
                 cancel_reason TEXT NOT NULL DEFAULT '',
                 refund_percent INTEGER,
                 refund_amount REAL,
-                FOREIGN KEY(event_id) REFERENCES events(id)
+                FOREIGN KEY(event_id) REFERENCES events(id) ON DELETE SET NULL  -- keep old bookings as history
             )
         ''')
         conn.execute("CREATE INDEX IF NOT EXISTS idx_bookings_customer ON bookings(customer_email)")
@@ -298,8 +297,8 @@ def init_db():
                 event_id INTEGER,
                 vehicle_id INTEGER,
                 status TEXT DEFAULT 'Assigned',
-                FOREIGN KEY(event_id) REFERENCES events(id),
-                FOREIGN KEY(vehicle_id) REFERENCES vehicles(id)
+                FOREIGN KEY(event_id) REFERENCES events(id) ON DELETE CASCADE,
+                FOREIGN KEY(vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE
             )
         ''')
 
@@ -371,7 +370,7 @@ def init_db():
                 guests INTEGER NOT NULL DEFAULT 1,
                 client_name TEXT DEFAULT '',
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY(event_id) REFERENCES events(id)
+                FOREIGN KEY(event_id) REFERENCES events(id) ON DELETE CASCADE  -- a removed event leaves the cart
             )
         ''')
         conn.execute("CREATE INDEX IF NOT EXISTS idx_cart_partner ON partner_cart(partner_email)")
@@ -474,8 +473,8 @@ def init_db():
 
         # accounts with no sign up date get the date of their first booking or support ticket
         # if there is none then just the time of this upgrade
-        undated = conn.execute("SELECT rowid, email FROM users WHERE created_at IS NULL OR created_at = ''").fetchall()
-        for rowid, user_email in undated:
+        undated = conn.execute("SELECT email, email FROM users WHERE created_at IS NULL OR created_at = ''").fetchall()
+        for key, user_email in undated:
             first_seen = conn.execute(
                 "SELECT MIN(t) FROM ("
                 "SELECT created_at AS t FROM bookings WHERE lower(customer_email) = lower(?) "
@@ -484,7 +483,7 @@ def init_db():
             ).fetchone()[0]
             if not first_seen:
                 first_seen = _now()
-            conn.execute("UPDATE users SET created_at = ? WHERE rowid = ?", (first_seen, rowid))
+            conn.execute("UPDATE users SET created_at = ? WHERE email = ?", (first_seen, key))
 
         # staff without a venue: the demo staff goes to the venue of the demo ticket and everyone
         # else to the first venue  the manager email is made up until they change it in Settings
@@ -497,26 +496,26 @@ def init_db():
                     break
             demo_staff_email = DEMO_ACCOUNTS[STAFF_ROLE][0].lower()
             unassigned = conn.execute(
-                "SELECT rowid, lower(email) FROM users WHERE role = ? AND "
+                "SELECT email, lower(email) FROM users WHERE role = ? AND "
                 "(venue_id IS NULL OR venue_id NOT IN (SELECT id FROM venues))", (STAFF_ROLE,)
             ).fetchall()
-            for rowid, user_email in unassigned:
+            for key, user_email in unassigned:
                 if user_email == demo_staff_email:
                     venue = demo_venue
                 else:
                     venue = venues[0]
-                conn.execute("UPDATE users SET venue_id = ? WHERE rowid = ?", (venue[0], rowid))
+                conn.execute("UPDATE users SET venue_id = ? WHERE email = ?", (venue[0], key))
 
             names = {}
             for v in venues:
                 names[v[0]] = v[1]
             no_manager = conn.execute(
-                "SELECT rowid, venue_id FROM users WHERE role = ? AND (manager_email IS NULL OR manager_email = '')",
+                "SELECT email, venue_id FROM users WHERE role = ? AND (manager_email IS NULL OR manager_email = '')",
                 (STAFF_ROLE,),
             ).fetchall()
-            for rowid, venue_id in no_manager:
-                conn.execute("UPDATE users SET manager_email = ? WHERE rowid = ?",
-                             (default_manager_email(names.get(venue_id)), rowid))
+            for key, venue_id in no_manager:
+                conn.execute("UPDATE users SET manager_email = ? WHERE email = ?",
+                             (default_manager_email(names.get(venue_id)), key))
 
 
 def register_user(email, password, role="Customer", phone=None, ssn=None, venue_id=None, manager_email=None):
@@ -527,6 +526,9 @@ def register_user(email, password, role="Customer", phone=None, ssn=None, venue_
     else:
         email = ""
     if not email or not password or email_exists(email) or ssn_error(role, ssn):
+        return False
+    # the server checks the length too, not only the sign-up screen
+    if len(password) < MIN_PASSWORD_LENGTH:
         return False
     if role == STAFF_ROLE:
         if staff_venue_error(venue_id, manager_email):
@@ -555,7 +557,7 @@ def register_user(email, password, role="Customer", phone=None, ssn=None, venue_
                 (email, hash_password(password), role, phone, _now(), ssn_hash, last4, venue_id, manager_email),
             )
         return True
-    except sqlite3.IntegrityError:
+    except db.IntegrityError:
         return False
 
 
@@ -777,16 +779,20 @@ def set_currency(email, currency):
     return cursor.rowcount > 0
 
 
+# returns False when the new password is too short
 def update_password(email, new_password):
     if email:
         email = email.strip()
     else:
         email = ""
+    if not new_password or len(new_password) < MIN_PASSWORD_LENGTH:
+        return False
     with _connect() as conn:
         conn.execute(
             "UPDATE users SET password = ? WHERE lower(email) = lower(?)",
             (hash_password(new_password), email),
         )
+    return True
 
 
 def email_exists(email):

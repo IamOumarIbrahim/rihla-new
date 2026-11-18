@@ -36,3 +36,7 @@ Thumbs.db
 desktop.ini
 report/
 report/
+
+# Electron app: packages and the built screens (made by npm install / npm run build)
+desktop/node_modules/
+desktop/dist/

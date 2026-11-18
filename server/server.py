@@ -1,6 +1,6 @@
 # Rihla API server (Flask) on localhost
 # run it with: python server/server.py  it serves on http://localhost:5000
-# all the data is in server/users.db
+# all the data is in the PostgreSQL database (see db.py)
 
 import base64
 import os
@@ -14,8 +14,19 @@ if _SERVER_DIR not in sys.path:
 from flask import Flask, request, jsonify
 import database_core as core
 import database_events as events
+from config import MIN_PASSWORD_LENGTH
 
 app = Flask(__name__)
+
+
+# the Electron app is a web page, so the browser asks if it may call this server
+# these headers say yes (the server only listens on this computer, 127.0.0.1)
+@app.after_request
+def allow_the_app(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    return response
 
 # ====== Helpers ======
 
@@ -71,6 +82,8 @@ def get_role(email):
 def register():
     body = request.get_json(silent=True) or {}
     role = body.get("role", "Customer")
+    if len(body.get("password", "") or "") < MIN_PASSWORD_LENGTH:
+        return _err("The password needs at least " + str(MIN_PASSWORD_LENGTH) + " characters.")
     if role in core.SIGNUP_ROLES:
         problem = core.ssn_error(role, body.get("ssn"))
         if role == core.STAFF_ROLE and not problem:
@@ -88,7 +101,8 @@ def register():
 @app.route("/api/users/password", methods=["PUT"])
 def update_password():
     body = request.get_json(silent=True) or {}
-    core.update_password(body.get("email", ""), body.get("new_password", ""))
+    if not core.update_password(body.get("email", ""), body.get("new_password", "")):
+        return _err("The password needs at least " + str(MIN_PASSWORD_LENGTH) + " characters.")
     return _ok({"message": "Password updated."})
 
 

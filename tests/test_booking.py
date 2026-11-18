@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "server"))
 
 import db_test_helpers as d
+import db
 import database_core
 
 
@@ -22,7 +23,7 @@ def next_weekday(names):
 class BookingTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        database_core.DB_PATH = os.path.join(self.tmp.name, "test.db")
+        d.use_test_schema()
         d.init_db()
         self.events = {e["title"]: e for e in d.get_all_events()}
         self.safari = self.events["Red Dune Sunset Safari and Royal BBQ Dinner"]
@@ -141,7 +142,7 @@ class BookingTests(unittest.TestCase):
 class CancellationTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        database_core.DB_PATH = os.path.join(self.tmp.name, "test.db")
+        d.use_test_schema()
         d.init_db()
 
     def tearDown(self):
@@ -239,8 +240,7 @@ class CancellationTests(unittest.TestCase):
     def test_demand_counts_upcoming_bookings_only(self):
         event, day = self.event_in(72, title="Counted")
         d.create_booking("a@email.com", event["id"], day, 2)
-        import sqlite3
-        conn = sqlite3.connect(database_core.DB_PATH)
+        conn = db.connect()
         conn.execute("INSERT INTO tickets (ticket_code, event_title, customer_email, status) VALUES ('1111222233334444', 'Counted', 'b@email.com', 'Valid')")
         conn.execute("INSERT INTO bookings (customer_email, event_id, event_title, booking_date, guests, total_price, ticket_code, status) "
                      "VALUES ('b@email.com', ?, 'Counted', '2020-01-01', 5, 525, '1111222233334444', 'Confirmed')", (event["id"],))
@@ -264,7 +264,7 @@ class CancellationTests(unittest.TestCase):
 class CapacityTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        database_core.DB_PATH = os.path.join(self.tmp.name, "test.db")
+        d.use_test_schema()
         d.init_db()
         self.day = datetime.date.today() + datetime.timedelta(days=3)
         d.create_event("Small dinner", "General", "100 AED", "a long enough description", "vendor@email.com", 1,
@@ -375,15 +375,13 @@ class CapacityTests(unittest.TestCase):
         self.assertEqual(titles["Red Dune Sunset Safari and Royal BBQ Dinner"], 30)
 
     def test_old_database_gets_the_capacity_column(self):
-        import sqlite3
-        old_path = os.path.join(self.tmp.name, "old.db")
-        conn = sqlite3.connect(old_path)
+        d.use_test_schema()
+        conn = db.connect()
         conn.execute("CREATE TABLE events (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, category TEXT, price TEXT, "
                      "description TEXT, vendor_email TEXT, venue_id INTEGER, event_datetime TEXT, is_recurring TEXT, recur_day TEXT, recur_time TEXT)")
         conn.execute("INSERT INTO events (title, price, event_datetime, is_recurring) VALUES ('Old event', '10 AED', '2030-01-01 10:00', 'One-Time')")
         conn.commit()
         conn.close()
-        database_core.DB_PATH = old_path
         d.init_db()
         d.init_db()
         old_event = [e for e in d.get_all_events() if e["title"] == "Old event"][0]

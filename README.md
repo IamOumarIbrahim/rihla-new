@@ -1,41 +1,50 @@
 # Rihla
 
-Desktop booking system for desert and city experiences in Dubai. Features a Tkinter client (`src/`), a Flask REST API (`server/`), and a local SQLite database (`server/users.db`).
+Desktop booking system for desert and city experiences in Dubai, with 6 roles: Customer, Vendor, Staff, Partner (travel agency), Dispatcher and Admin.
 
-Supports 6 roles: Customer, Vendor, Staff, Partner (travel agency), Dispatcher, and Admin.
+| Part | Technology | Folder |
+| :--- | :--- | :--- |
+| App (what users see) | Electron + React + Ant Design | `desktop/` |
+| Server (all the rules) | Python Flask REST API | `server/` |
+| Database | PostgreSQL | created by `setup_windows.ps1` |
+| Tests | Python `unittest` on a separate test schema | `tests/` |
 
-## Requirements
+The old Tkinter client is still in `src/` (legacy). The new app talks to the same server.
 
-- Windows 10/11
-- Python 3.12+ with Tkinter (`Add python.exe to PATH`)
-- Dependencies: `Flask`, `requests`, `Pillow`, `tksvg`
+## Why Electron and PostgreSQL
 
-## Setup & Running
+The Tkinter + SQLite version had problems outside Windows: Tk was missing on Linux, the screens fell back to a bitmap font, the theme used a Windows-only font and the icon package would not build. Electron screens are web pages with the fonts bundled, so they look the same on Windows and Linux. PostgreSQL is one real database server with row locks, instead of one SQLite file that locks completely on every write.
 
-```bash
-git clone https://github.com/IamOumarIbrahim/rihla-new.git rihla_manual
-cd rihla_manual
-python -m pip install -r requirements.txt
-```
+## Setup on Windows
 
-Seed database with demo events, vehicles, and bookings:
+1. Install Python 3.12+ (tick "Add python.exe to PATH"), Node.js 22+ and PostgreSQL 18.
+2. From this folder run once:
+
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\dummy_data.ps1
+powershell -ExecutionPolicy Bypass -File .\setup_windows.ps1
 ```
 
-Start the server (Terminal 1):
+3. Start Rihla (server window + app):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\start_rihla.ps1
+```
+
+## Setup on Linux
+
 ```bash
-python start_server.py
+# PostgreSQL with a rihla user and database
+sudo -u postgres psql -c "CREATE ROLE rihla LOGIN PASSWORD 'rihla';" -c "CREATE DATABASE rihla OWNER rihla;"
+python3 -m pip install -r requirements.txt
+cd desktop && npm install && npm run build && cd ..
+./start_rihla.sh
 ```
 
-Start the desktop client (Terminal 2):
-```bash
-python start_client.py
-```
+The database address can be changed with `RIHLA_DATABASE_URL` (default `postgresql://rihla:rihla@localhost:5432/rihla`).
 
-## Demo Accounts
+## Demo accounts
 
-The login screen provides one-click buttons for each default role:
+The sign-in screen has one button per account.
 
 | Role | Email | Password |
 | :--- | :--- | :--- |
@@ -46,22 +55,32 @@ The login screen provides one-click buttons for each default role:
 | Dispatcher | `dispatcher@email.com` | `dispatcher1234` |
 | Admin | `admin@email.com` | `admin1234` |
 
-- **Sample Ticket Code (Staff Scanner):** `1234567890123456` (Burj Khalifa event).
-- **Payment:** Checkout forms are pre-filled with test card details.
+- Demo ticket for the staff scanner: `1234 5678 9012 3456` (New year dinner, Burj Khalifa).
+- Payment forms are filled with demo card details. Changing any field makes the payment fail.
+- Verification codes (sign up, forgot password) are always `000000`.
 
-## Project Structure
+## Demo data
 
-```text
-server/        Flask API (server.py), database schema, default accounts
-src/           Tkinter client (main.py entrypoint, api_client.py)
-src/screens/   Login, sign-up, password reset, event listings
-src/welcome/   Role-specific home dashboards and shared widgets
-assets/        UI assets, icons, and event imagery
-tests/         Unit tests (isolated temporary database)
+```powershell
+powershell -ExecutionPolicy Bypass -File .\dummy_data.ps1
 ```
+
+Safe to run again: it removes what it added last time and adds it again.
 
 ## Tests
 
 ```bash
-python -m unittest discover -s tests
+python -m unittest discover -s tests -v
+```
+
+The tests use their own schema (`rihla_test`), so the demo data is never touched.
+
+## Project structure
+
+```text
+desktop/          Electron app: main.js (window), src/ (React screens), tools/capture.js (screenshots)
+server/           Flask API (server.py), rules (database_core.py, database_events.py), db.py (PostgreSQL)
+tests/            Unit and integration tests
+src/              Legacy Tkinter client
+assets/           Pictures, icons and the fonts the app ships with
 ```

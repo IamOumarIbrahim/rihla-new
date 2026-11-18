@@ -1,12 +1,13 @@
 import datetime
 import os
-import sqlite3
 import sys
 import tempfile
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "server"))
 
+import db_test_helpers as d
+import db
 import database_core as core
 import database_events as ev
 import server
@@ -21,7 +22,7 @@ class StaffVenueTests(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        core.DB_PATH = os.path.join(self.tmp.name, "test.db")
+        d.use_test_schema()
         core.init_db()
         venues = {v["name"]: v["id"] for v in ev.get_all_venues()}
         self.burj = venues["Burj Khalifa"]
@@ -161,14 +162,13 @@ class StaffVenueTests(unittest.TestCase):
         self.assertEqual(core.get_staff_support_tickets(STAFF), [])
 
     def test_old_database_staff_get_a_venue_and_manager(self):
-        old_path = os.path.join(self.tmp.name, "old.db")
-        conn = sqlite3.connect(old_path)
+        d.use_test_schema()
+        conn = db.connect()
         conn.execute("CREATE TABLE users (email TEXT UNIQUE, password TEXT, role TEXT NOT NULL DEFAULT 'Customer', phone TEXT)")
         conn.execute("INSERT INTO users (email, password, role) VALUES ('staff@email.com', 'pw', 'Staff')")
         conn.execute("INSERT INTO users (email, password, role) VALUES ('older.staff@email.com', 'pw', 'Staff')")
         conn.commit()
         conn.close()
-        core.DB_PATH = old_path
         core.init_db()
         core.init_db()
         self.assertEqual(core.get_staff_venue(STAFF)["name"], "Burj Khalifa")

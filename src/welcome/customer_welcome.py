@@ -320,7 +320,7 @@ class CustomerWelcomeScreen(BaseWelcomeScreen):
                 code_color = t.TEXT
             else:
                 code_color = t.TEXT_MUTED
-            tk.Label(card, text=format_ticket_code(booking["ticket_code"]), font=("Consolas", 16, "bold"), bg=t.CARD_BG, fg=code_color).pack(anchor="w", padx=15, pady=(0, 5))
+            tk.Label(card, text=format_ticket_code(booking["ticket_code"]), font=(t.MONO, 16, "bold"), bg=t.CARD_BG, fg=code_color).pack(anchor="w", padx=15, pady=(0, 5))
             if booking["status"] == "Cancelled":
                 tk.Label(card, text=cancelled_line(booking, self.email), font=(t.FONT, 9), bg=t.CARD_BG, fg="#c0392b",
                          wraplength=600, justify="left").pack(anchor="w", padx=15, pady=(0, 4))

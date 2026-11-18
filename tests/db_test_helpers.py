@@ -20,7 +20,7 @@ from database_core import (
     update_password, email_exists, phone_exists,
     create_support_ticket, get_support_tickets_by_customer,
     get_open_support_tickets, resolve_support_ticket,
-    DB_PATH, DEFAULT_EVENT_CAPACITY, MAX_EVENT_CAPACITY,
+    DEFAULT_EVENT_CAPACITY, MAX_EVENT_CAPACITY,
     MAX_GUESTS_PER_BOOKING, MAX_OPEN_SUPPORT_TICKETS,
 )
 
@@ -39,3 +39,14 @@ from database_events import (
     get_cart_items, get_cart_count, add_to_cart, remove_from_cart,
     clear_cart, checkout_cart,
 )
+
+
+import db
+
+# every test gets an empty schema in PostgreSQL so the real data is never touched
+TEST_SCHEMA = "rihla_test"
+
+
+def use_test_schema():
+    db.SCHEMA = TEST_SCHEMA
+    db.drop_schema(TEST_SCHEMA)

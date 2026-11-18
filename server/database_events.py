@@ -261,7 +261,7 @@ def get_events_today(venue_id=None):
         rows = conn.execute('''
             SELECT e.id, e.title, e.event_datetime, e.recur_time, e.is_recurring, e.recur_day, v.name, v.maps_url
             FROM events e LEFT JOIN venues v ON v.id = e.venue_id
-            WHERE ? IS NULL OR e.venue_id = ?
+            WHERE CAST(? AS INTEGER) IS NULL OR e.venue_id = ?
             ORDER BY e.title
         ''', (venue_id, venue_id)).fetchall()
 
@@ -431,7 +431,7 @@ def _capacity_info(conn, event_id, day=None):
         "JOIN vehicles v ON v.id = ev.vehicle_id "
         "LEFT JOIN vehicle_types vt ON vt.name = v.vehicle_type "
         "WHERE ev.event_id = ? AND ev.status = 'Assigned' "
-        "GROUP BY v.vehicle_type",
+        "GROUP BY v.vehicle_type, vt.capacity",
         (event_id,),
     ).fetchall()
 
